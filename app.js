@@ -10,6 +10,11 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const MAX_PHOTO_BYTES = 18 * 1024 * 1024;
 const MAX_AUDIO_MILLISECONDS = 10 * 60 * 1000;
+const BACKUP_FORMAT = 'bedrock-backup-v1';
+const BACKUP_PAYLOAD_FORMAT = 'bedrock-backup-payload-v1';
+const BACKUP_MAX_BYTES = 100 * 1024 * 1024;
+const MAX_IMAGE_EDGE = 1600;
+const IMAGE_JPEG_QUALITY = 0.82;
 
 const elements = {
   list: document.getElementById('recordsList'),
@@ -59,7 +64,38 @@ const elements = {
   disableBiometric: document.getElementById('disableBiometricButton'),
   lockNow: document.getElementById('lockNowButton'),
   changePasswordModal: document.getElementById('changePasswordModal'),
-  changePasswordForm: document.getElementById('changePasswordForm')
+  changePasswordForm: document.getElementById('changePasswordForm'),
+  gateRestoreBackup: document.getElementById('gateRestoreBackupButton'),
+  passwordModal: document.getElementById('passwordModal'),
+  passwordForm: document.getElementById('passwordForm'),
+  passwordTitle: document.getElementById('passwordRecordTitle'),
+  passwordUsername: document.getElementById('passwordRecordUsername'),
+  passwordValue: document.getElementById('passwordRecordValue'),
+  passwordWebsite: document.getElementById('passwordRecordWebsite'),
+  passwordNotes: document.getElementById('passwordRecordNotes'),
+  togglePasswordValue: document.getElementById('togglePasswordRecordValue'),
+  savePassword: document.getElementById('savePasswordRecordButton'),
+  passwordDetailModal: document.getElementById('passwordDetailModal'),
+  passwordDetailTitle: document.getElementById('passwordDetailTitle'),
+  passwordDetailUsername: document.getElementById('passwordDetailUsername'),
+  passwordDetailValue: document.getElementById('passwordDetailValue'),
+  revealPasswordDetail: document.getElementById('revealPasswordDetail'),
+  passwordDetailWebsiteWrap: document.getElementById('passwordDetailWebsiteWrap'),
+  passwordDetailWebsite: document.getElementById('passwordDetailWebsite'),
+  passwordDetailNotesWrap: document.getElementById('passwordDetailNotesWrap'),
+  passwordDetailNotes: document.getElementById('passwordDetailNotes'),
+  backupExportModal: document.getElementById('backupExportModal'),
+  backupExportForm: document.getElementById('backupExportForm'),
+  backupExportPassword: document.getElementById('backupExportPassword'),
+  backupExportError: document.getElementById('backupExportError'),
+  confirmBackupExport: document.getElementById('confirmBackupExport'),
+  backupImportModal: document.getElementById('backupImportModal'),
+  backupImportForm: document.getElementById('backupImportForm'),
+  backupImportPassword: document.getElementById('backupImportPassword'),
+  backupImportError: document.getElementById('backupImportError'),
+  confirmBackupImport: document.getElementById('confirmBackupImport'),
+  backupImportFileName: document.getElementById('backupImportFileName'),
+  backupFileInput: document.getElementById('backupFileInput')
 };
 
 let database;
@@ -82,6 +118,9 @@ let vaultConfig = null;
 let vaultCryptoKey = null;
 let gateMode = 'setup';
 let pageHiddenAt = 0;
+let activePasswordRecordId = null;
+let pendingBackupFile = null;
+let searchDebounceTimer = null;
 
 function openDatabase() {
   return new Promise((resolve, reject) => {
@@ -128,7 +167,14 @@ function storeRequest(mode, operation) {
 async function loadRecords() {
   if (!vaultCryptoKey) throw new Error('Kasa kilitli.');
   const stored = await storeRequest('readonly', store => store.getAll());
-  records = await Promise.all(stored.map(item => decryptRecord(item, vaultCryptoKey)));
+  const decrypted = [];
+  // Decrypt in small batches so several large audio/photo attachments do not all
+  // expand in memory at once on lower-memory Android phones.
+  for (let index = 0; index < stored.length; index += 6) {
+    const batch = stored.slice(index, index + 6);
+    decrypted.push(...await Promise.all(batch.map(item => decryptRecord(item, vaultCryptoKey))));
+  }
+  records = decrypted;
   records.sort((a, b) => b.updatedAt - a.updatedAt);
   renderRecords();
 }
@@ -205,6 +251,11 @@ async function encryptRecord(record, key) {
     title: record.title,
     body: record.body,
     category: record.category,
+    credential: record.category === 'password' ? {
+      username: record.credential && record.credential.username ? record.credential.username : '',
+      password: record.credential && record.credential.password ? record.credential.password : '',
+      website: record.credential && record.credential.website ? record.credential.website : ''
+    } : null,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt
   };
@@ -309,6 +360,7 @@ function setGateMode(mode) {
   elements.gateConfirm.required = mode === 'setup';
   elements.gatePassword.autocomplete = mode === 'setup' ? 'new-password' : 'current-password';
   elements.gateBiometric.hidden = mode !== 'unlock' || !vaultConfig || !vaultConfig.biometric;
+  elements.gateRestoreBackup.hidden = mode !== 'setup';
   if (mode === 'setup') {
     elements.gateTitle.textContent = 'Kişisel kasanı oluştur.';
     elements.gateSubtitle.textContent = 'Bir ana parola belirle. Bedrock kayıtlarını bu parola ile cihazında şifreleyecek.';
@@ -535,6 +587,17 @@ function clearUnlockedSession() {
   elements.settingsModal.hidden = true;
   elements.changePasswordModal.hidden = true;
   elements.changePasswordForm.reset();
+  elements.passwordModal.hidden = true;
+  elements.passwordDetailModal.hidden = true;
+  elements.backupExportModal.hidden = true;
+  elements.backupImportModal.hidden = true;
+  elements.passwordForm.reset();
+  elements.backupExportForm.reset();
+  elements.backupImportForm.reset();
+  elements.passwordDetailValue.value = '';
+  elements.passwordDetailUsername.value = '';
+  pendingBackupFile = null;
+  activePasswordRecordId = null;
   document.body.classList.remove('modal-open');
   closePhotoModal();
   resetAudioModal();
@@ -561,12 +624,17 @@ function formatDate(timestamp) {
 }
 
 function categoryName(category) {
-  return category === 'object' ? 'Eşya konumu' : 'Genel not';
+  if (category === 'object') return 'Eşya konumu';
+  if (category === 'password') return 'Parola';
+  return 'Genel not';
 }
 
 function iconMarkup(category) {
   if (category === 'object') {
     return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3Z"/><path d="m4.5 8 7.5 4.3L19.5 8M12 12.3V21"/></svg>';
+  }
+  if (category === 'password') {
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/></svg>';
   }
   return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h14v15H5zM8 8h8M8 12h8M8 16h5"/></svg>';
 }
@@ -599,6 +667,7 @@ function createAttachmentView(attachment) {
     image.src = url;
     image.alt = attachment.name || 'Kaydedilmiş fotoğraf';
     image.loading = 'lazy';
+    image.decoding = 'async';
     link.append(image);
     wrapper.append(link);
   } else if (attachment.kind === 'audio') {
@@ -633,7 +702,9 @@ function createRecordCard(record) {
   title.textContent = record.title;
   const preview = document.createElement('p');
   preview.className = 'record-preview';
-  preview.textContent = record.body || 'Açıklama eklenmedi.';
+  preview.textContent = record.category === 'password'
+    ? 'Giriş bilgileri şifreli olarak saklanıyor.'
+    : (record.body || 'Açıklama eklenmedi.');
   const meta = document.createElement('div');
   meta.className = 'record-meta';
   const category = document.createElement('span');
@@ -670,7 +741,7 @@ function createRecordCard(record) {
   editButton.setAttribute('aria-label', `${record.title} kaydını düzenle`);
   editButton.title = 'Düzenle';
   editButton.innerHTML = '<svg viewBox="0 0 24 24"><path d="m14 5 5 5M4 20l4.5-1 10.8-10.8a2.1 2.1 0 0 0-3-3L5.5 16 4 20Z"/></svg>';
-  editButton.addEventListener('click', () => openEditor(record));
+  editButton.addEventListener('click', () => record.category === 'password' ? openPasswordEditor(record) : openEditor(record));
   const deleteButton = document.createElement('button');
   deleteButton.type = 'button';
   deleteButton.className = 'record-action';
@@ -678,6 +749,16 @@ function createRecordCard(record) {
   deleteButton.title = 'Sil';
   deleteButton.innerHTML = '<svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5"/></svg>';
   deleteButton.addEventListener('click', () => deleteRecord(record));
+  if (record.category === 'password') {
+    const viewButton = document.createElement('button');
+    viewButton.type = 'button';
+    viewButton.className = 'record-action';
+    viewButton.setAttribute('aria-label', `${record.title} giriş bilgilerini görüntüle`);
+    viewButton.title = 'Giriş bilgilerini görüntüle';
+    viewButton.innerHTML = '<svg viewBox="0 0 24 24"><path d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.5"/></svg>';
+    viewButton.addEventListener('click', () => openPasswordDetails(record));
+    actions.append(viewButton);
+  }
   actions.append(editButton, deleteButton);
 
   card.append(symbol, main, actions);
@@ -690,7 +771,10 @@ function renderRecords() {
   const filtered = records.filter(record => {
     const matchesCategory = activeCategory === 'all' || record.category === activeCategory;
     const attachmentNames = (record.attachments || []).map(item => item.name || '').join(' ');
-    const searchable = escapeSearch(`${record.title} ${record.body} ${categoryName(record.category)} ${attachmentNames}`);
+    const credentialText = record.category === 'password'
+      ? `${record.credential && record.credential.username || ''} ${record.credential && record.credential.website || ''}`
+      : '';
+    const searchable = escapeSearch(`${record.title} ${record.body} ${credentialText} ${categoryName(record.category)} ${attachmentNames}`);
     return matchesCategory && (!query || searchable.includes(query));
   });
 
@@ -730,7 +814,9 @@ function renderRecords() {
     return;
   }
 
-  for (const record of filtered) elements.list.append(createRecordCard(record));
+  const fragment = document.createDocumentFragment();
+  for (const record of filtered) fragment.append(createRecordCard(record));
+  elements.list.append(fragment);
 }
 
 function updateFilterButtons() {
@@ -764,6 +850,355 @@ function closeEditor() {
   elements.modal.hidden = true;
   document.body.classList.remove('modal-open');
   editingId = null;
+}
+
+function openPasswordEditor(record = null) {
+  activePasswordRecordId = record ? record.id : null;
+  elements.passwordForm.reset();
+  elements.passwordTitle.value = record ? record.title : '';
+  elements.passwordUsername.value = record && record.credential ? record.credential.username || '' : '';
+  elements.passwordValue.value = record && record.credential ? record.credential.password || '' : '';
+  elements.passwordWebsite.value = record && record.credential ? record.credential.website || '' : '';
+  elements.passwordNotes.value = record ? record.body || '' : '';
+  elements.passwordModal.querySelector('h2').textContent = record ? 'Parola kaydını düzenle.' : 'Giriş bilgilerini sakla.';
+  elements.togglePasswordValue.textContent = 'Göster';
+  elements.passwordValue.type = 'password';
+  elements.passwordModal.hidden = false;
+  document.body.classList.add('modal-open');
+  window.setTimeout(() => elements.passwordTitle.focus(), 40);
+}
+
+function closePasswordEditor() {
+  elements.passwordModal.hidden = true;
+  document.body.classList.remove('modal-open');
+  elements.passwordForm.reset();
+  elements.passwordValue.type = 'password';
+  elements.togglePasswordValue.textContent = 'Göster';
+  activePasswordRecordId = null;
+}
+
+function openPasswordDetails(record) {
+  activePasswordRecordId = record.id;
+  const credential = record.credential || {};
+  elements.passwordDetailTitle.textContent = record.title;
+  elements.passwordDetailUsername.value = credential.username || '';
+  elements.passwordDetailValue.value = credential.password || '';
+  elements.passwordDetailValue.type = 'password';
+  elements.revealPasswordDetail.textContent = 'Göster';
+  const website = safeWebsiteUrl(credential.website || '');
+  elements.passwordDetailWebsiteWrap.hidden = !website;
+  if (website) {
+    elements.passwordDetailWebsite.href = website;
+    elements.passwordDetailWebsite.textContent = credential.website;
+  } else {
+    elements.passwordDetailWebsite.removeAttribute('href');
+    elements.passwordDetailWebsite.textContent = '';
+  }
+  elements.passwordDetailNotesWrap.hidden = !record.body;
+  elements.passwordDetailNotes.textContent = record.body || '';
+  elements.passwordDetailModal.hidden = false;
+  document.body.classList.add('modal-open');
+}
+
+function closePasswordDetails() {
+  elements.passwordDetailModal.hidden = true;
+  document.body.classList.remove('modal-open');
+  elements.passwordDetailUsername.value = '';
+  elements.passwordDetailValue.value = '';
+  elements.passwordDetailNotes.textContent = '';
+  elements.passwordDetailWebsite.removeAttribute('href');
+  elements.passwordDetailWebsite.textContent = '';
+  activePasswordRecordId = null;
+}
+
+function safeWebsiteUrl(value) {
+  if (!value) return '';
+  try {
+    const url = new URL(/^https?:\/\//i.test(value) ? value : `https://${value}`);
+    return ['https:', 'http:'].includes(url.protocol) ? url.href : '';
+  } catch (_) {
+    return '';
+  }
+}
+
+async function copySensitiveValue(value, label) {
+  if (!value) { showToast(`${label} boş.`); return; }
+  try {
+    if (!navigator.clipboard || !navigator.clipboard.writeText) throw new Error('Clipboard API kullanılamıyor.');
+    await navigator.clipboard.writeText(value);
+    showToast(`${label} panoya kopyalandı.`);
+  } catch (_) {
+    showToast('Panoya kopyalama izni yok. HTTPS bağlantısını ve tarayıcı izinlerini kontrol et.');
+  }
+}
+
+async function savePasswordRecord(event) {
+  event.preventDefault();
+  const title = elements.passwordTitle.value.trim();
+  const password = elements.passwordValue.value;
+  if (!title || !password) { showToast('Hizmet adı ve parola gerekli.'); return; }
+  const now = Date.now();
+  const existing = activePasswordRecordId ? records.find(item => item.id === activePasswordRecordId) : null;
+  const credential = {
+    username: elements.passwordUsername.value.trim(),
+    password,
+    website: elements.passwordWebsite.value.trim()
+  };
+  const record = {
+    id: activePasswordRecordId || makeId(),
+    title,
+    body: elements.passwordNotes.value.trim(),
+    category: 'password',
+    credential,
+    attachments: existing && Array.isArray(existing.attachments) ? existing.attachments : [],
+    createdAt: existing ? existing.createdAt : now,
+    updatedAt: now
+  };
+  elements.savePassword.disabled = true;
+  try {
+    const encryptedRecord = await encryptRecord(record, vaultCryptoKey);
+    await storeRequest('readwrite', store => store.put(encryptedRecord));
+    await loadRecords();
+    closePasswordEditor();
+    showToast(existing ? 'Parola kaydı güncellendi.' : 'Parola kaydı şifreli olarak eklendi.');
+  } catch (error) {
+    showToast(storageErrorMessage(error));
+  } finally {
+    elements.savePassword.disabled = false;
+  }
+}
+
+function openBackupExport() {
+  elements.backupExportForm.reset();
+  elements.backupExportError.textContent = '';
+  elements.backupExportModal.hidden = false;
+  document.body.classList.add('modal-open');
+}
+
+function closeBackupExport() {
+  elements.backupExportModal.hidden = true;
+  elements.backupExportForm.reset();
+  elements.backupExportError.textContent = '';
+  document.body.classList.remove('modal-open');
+}
+
+function encodeBinaryForBackup(value) {
+  if (value instanceof ArrayBuffer) return bytesToBase64(new Uint8Array(value));
+  if (ArrayBuffer.isView(value)) return bytesToBase64(new Uint8Array(value.buffer, value.byteOffset, value.byteLength));
+  throw new Error('Yedekte beklenmeyen bir veri biçimi bulundu.');
+}
+
+function encodeRecordForBackup(record) {
+  return {
+    id: record.id,
+    format: record.format,
+    metaIv: encodeBinaryForBackup(record.metaIv),
+    metaCipher: encodeBinaryForBackup(record.metaCipher),
+    attachments: (record.attachments || []).map(item => ({
+      id: item.id,
+      kind: item.kind,
+      name: item.name,
+      mimeType: item.mimeType,
+      createdAt: item.createdAt,
+      iv: encodeBinaryForBackup(item.iv),
+      cipher: encodeBinaryForBackup(item.cipher)
+    }))
+  };
+}
+
+function decodeRecordFromBackup(record) {
+  if (!record || typeof record.id !== 'string' || record.format !== VAULT_FORMAT || !Array.isArray(record.attachments)) {
+    throw new Error('Yedekte geçersiz bir kayıt bulundu.');
+  }
+  const decoded = {
+    id: record.id,
+    format: record.format,
+    metaIv: base64ToBytes(record.metaIv),
+    metaCipher: base64ToBytes(record.metaCipher),
+    attachments: record.attachments.map(item => {
+      if (!item || typeof item.id !== 'string' || !['image', 'audio'].includes(item.kind)) throw new Error('Yedekte geçersiz bir ek bulundu.');
+      return {
+        id: item.id,
+        kind: item.kind,
+        name: String(item.name || ''),
+        mimeType: String(item.mimeType || 'application/octet-stream'),
+        createdAt: Number(item.createdAt) || Date.now(),
+        iv: base64ToBytes(item.iv),
+        cipher: base64ToBytes(item.cipher)
+      };
+    })
+  };
+  if (decoded.metaIv.length !== 12 || decoded.metaCipher.length < 16) throw new Error('Yedek dosyası bozuk veya eksik.');
+  for (const item of decoded.attachments) if (item.iv.length !== 12 || item.cipher.length < 16) throw new Error('Yedek eki bozuk veya eksik.');
+  return decoded;
+}
+
+async function createEncryptedBackup(password) {
+  // Requiring the current vault password prevents exporting from a stale or unattended session.
+  await unwrapVaultKey(vaultConfig, password);
+  const storedRecords = await storeRequest('readonly', store => store.getAll());
+  const payload = {
+    format: BACKUP_PAYLOAD_FORMAT,
+    version: 1,
+    exportedAt: Date.now(),
+    vaultConfig: { ...vaultConfig, biometric: null },
+    records: storedRecords.map(encodeRecordForBackup)
+  };
+  const salt = randomBytes(16);
+  const wrappingKey = await derivePasswordWrappingKey(password, salt, PBKDF2_ITERATIONS);
+  const encrypted = await encryptBytes(encoder.encode(JSON.stringify(payload)), wrappingKey, BACKUP_FORMAT);
+  const envelope = {
+    format: BACKUP_FORMAT,
+    version: 1,
+    kdf: 'PBKDF2-SHA-256',
+    iterations: PBKDF2_ITERATIONS,
+    salt: bytesToBase64(salt),
+    iv: bytesToBase64(encrypted.iv),
+    cipher: bytesToBase64(new Uint8Array(encrypted.cipher))
+  };
+  const blob = new Blob([JSON.stringify(envelope)], { type: 'application/vnd.bedrock.backup+json' });
+  if (blob.size > BACKUP_MAX_BYTES) throw new Error('Yedek dosyası 100 MB sınırını aşıyor.');
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `bedrock-backup-${new Date().toISOString().slice(0, 10)}.bedrock`;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 30000);
+}
+
+async function handleBackupExport(event) {
+  event.preventDefault();
+  const password = elements.backupExportPassword.value;
+  if (!password) { elements.backupExportError.textContent = 'Ana parolanı gir.'; return; }
+  elements.confirmBackupExport.disabled = true;
+  elements.backupExportError.textContent = '';
+  try {
+    await createEncryptedBackup(password);
+    closeBackupExport();
+    showToast('Şifreli Bedrock yedeği indirildi.');
+  } catch (error) {
+    elements.backupExportError.textContent = 'Ana parola yanlış veya yedek oluşturulamadı.';
+  } finally {
+    elements.confirmBackupExport.disabled = false;
+  }
+}
+
+function chooseBackupFile() {
+  elements.backupFileInput.value = '';
+  elements.backupFileInput.click();
+}
+
+function handleBackupFileChosen(event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+  if (file.size > BACKUP_MAX_BYTES) {
+    showToast('Yedek dosyası 100 MB sınırını aşıyor.');
+    return;
+  }
+  if (file.size < 40) {
+    showToast('Bu dosya geçerli bir Bedrock yedeği gibi görünmüyor.');
+    return;
+  }
+  pendingBackupFile = file;
+  elements.backupImportFileName.textContent = file.name;
+  elements.backupImportPassword.value = '';
+  elements.backupImportError.textContent = '';
+  elements.settingsModal.hidden = true;
+  elements.backupImportModal.hidden = false;
+  document.body.classList.add('modal-open');
+}
+
+function closeBackupImport() {
+  elements.backupImportModal.hidden = true;
+  elements.backupImportForm.reset();
+  elements.backupImportError.textContent = '';
+  pendingBackupFile = null;
+  document.body.classList.remove('modal-open');
+}
+
+async function restoreEncryptedBackup(event) {
+  event.preventDefault();
+  if (!pendingBackupFile) { elements.backupImportError.textContent = 'Önce yedek dosyası seç.'; return; }
+  const password = elements.backupImportPassword.value;
+  if (!password) { elements.backupImportError.textContent = 'Yedek parolasını gir.'; return; }
+  elements.confirmBackupImport.disabled = true;
+  elements.backupImportError.textContent = '';
+  try {
+    const envelope = JSON.parse(await pendingBackupFile.text());
+    if (!envelope || envelope.format !== BACKUP_FORMAT || envelope.version !== 1 || envelope.kdf !== 'PBKDF2-SHA-256') {
+      throw new Error('Bu dosya Bedrock yedeği değil veya sürümü desteklenmiyor.');
+    }
+    const iterations = Number(envelope.iterations);
+    if (!Number.isInteger(iterations) || iterations < 100000 || iterations > 1000000) throw new Error('Yedek şifreleme ayarları geçersiz.');
+    const key = await derivePasswordWrappingKey(password, base64ToBytes(envelope.salt), iterations);
+    const plaintext = await decryptBytes({ iv: base64ToBytes(envelope.iv), cipher: base64ToBytes(envelope.cipher) }, key, BACKUP_FORMAT);
+    const payload = JSON.parse(decoder.decode(plaintext));
+    if (!payload || payload.format !== BACKUP_PAYLOAD_FORMAT || payload.version !== 1 || !Array.isArray(payload.records) || payload.records.length > 50000) {
+      throw new Error('Yedek içeriği geçersiz.');
+    }
+    const config = payload.vaultConfig;
+    if (!config || config.key !== 'vaultConfig' || config.version !== 1 || config.kdf !== 'PBKDF2-SHA-256' || !config.salt || !config.wrapIv || !config.wrappedKey || !Number.isInteger(config.iterations) || config.iterations < 100000 || config.iterations > 1000000) {
+      throw new Error('Yedekte kasa anahtarı bulunamadı veya şifreleme ayarları geçersiz.');
+    }
+    if (base64ToBytes(config.salt).length !== 16 || base64ToBytes(config.wrapIv).length !== 12 || base64ToBytes(config.wrappedKey).length < 48) {
+      throw new Error('Yedekteki kasa anahtarı verisi bozuk.');
+    }
+    const decodedRecords = payload.records.map(decodeRecordFromBackup);
+    if (!window.confirm(`${decodedRecords.length} kayıt içeren yedek geri yüklenecek. Bu cihazdaki mevcut Bedrock kayıtlarının tamamı silinip yedekteki kayıtlarla değiştirilecek. Devam edilsin mi?`)) return;
+    const restoredConfig = { ...config, biometric: null };
+    await new Promise((resolve, reject) => {
+      const tx = database.transaction([STORE_NAME, META_STORE], 'readwrite');
+      const recordStore = tx.objectStore(STORE_NAME);
+      const metaStore = tx.objectStore(META_STORE);
+      recordStore.clear();
+      for (const record of decodedRecords) recordStore.put(record);
+      metaStore.clear();
+      metaStore.put(restoredConfig);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error || new Error('Yedek geri yüklenemedi.'));
+      tx.onabort = () => reject(tx.error || new Error('Yedek geri yüklenemedi.'));
+    });
+    vaultConfig = restoredConfig;
+    clearUnlockedSession();
+    setGateMode('unlock');
+    closeBackupImport();
+    showToast('Yedek geri yüklendi. Kasanı yedeğin ana parolasıyla aç.');
+  } catch (error) {
+    console.error('Bedrock yedek geri yükleme:', error);
+    elements.backupImportError.textContent = error.name === 'OperationError'
+      ? 'Yedek parolası yanlış veya dosya bozuk.'
+      : (error.message || 'Yedek geri yüklenemedi.');
+  } finally {
+    elements.confirmBackupImport.disabled = false;
+  }
+}
+
+async function optimizePhotoBlob(file) {
+  if (!window.createImageBitmap || !document.createElement('canvas').toBlob) return file;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const longest = Math.max(bitmap.width, bitmap.height);
+    const scale = Math.min(1, MAX_IMAGE_EDGE / longest);
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    const context = canvas.getContext('2d', { alpha: false });
+    if (!context) { bitmap.close(); return file; }
+    // JPEG has no transparency; use a neutral background for transparent source images.
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close();
+    const optimized = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', IMAGE_JPEG_QUALITY));
+    canvas.width = 1;
+    canvas.height = 1;
+    return optimized && optimized.size < file.size ? optimized : file;
+  } catch (error) {
+    console.warn('Fotoğraf sıkıştırılamadı, özgün dosya kullanılacak:', error);
+    return file;
+  }
 }
 
 async function saveRecord(event) {
@@ -1029,6 +1464,7 @@ function closePhotoModal() {
   elements.photoTitle.value = '';
   elements.photoDescription.value = '';
   elements.photoCategory.value = 'object';
+  elements.savePhoto.disabled = false;
 }
 
 function handlePhotoSelected(event) {
@@ -1059,12 +1495,13 @@ async function savePhotoRecord() {
     return;
   }
   elements.savePhoto.disabled = true;
-  const extension = (pendingPhotoBlob.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
-  const attachment = {
-    id: makeId(), kind: 'image', name: `${title}.${extension}`,
-    mimeType: pendingPhotoBlob.type, blob: pendingPhotoBlob, createdAt: Date.now()
-  };
   try {
+    const optimizedPhoto = await optimizePhotoBlob(pendingPhotoBlob);
+    const extension = (optimizedPhoto.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
+    const attachment = {
+      id: makeId(), kind: 'image', name: `${title}.${extension}`,
+      mimeType: optimizedPhoto.type || pendingPhotoBlob.type, blob: optimizedPhoto, createdAt: Date.now()
+    };
     await saveMediaRecord({ title, body: elements.photoDescription.value, category: elements.photoCategory.value, attachment });
     closePhotoModal();
     showToast('Fotoğraf Bedrock’a kaydedildi.');
@@ -1077,6 +1514,7 @@ async function savePhotoRecord() {
 function initEvents() {
   document.getElementById('newNoteButton').addEventListener('click', () => openEditor(null, 'note'));
   document.getElementById('newObjectButton').addEventListener('click', () => openEditor(null, 'object'));
+  document.getElementById('newPasswordButton').addEventListener('click', () => openPasswordEditor());
   document.getElementById('newAudioButton').addEventListener('click', openAudioModal);
   document.getElementById('newPhotoButton').addEventListener('click', openPhotoPicker);
   document.getElementById('emptyAddButton').addEventListener('click', () => openEditor());
@@ -1087,7 +1525,10 @@ function initEvents() {
   elements.audioModal.addEventListener('click', event => { if (event.target === elements.audioModal) closeAudioModal(); });
   elements.photoModal.addEventListener('click', event => { if (event.target === elements.photoModal) closePhotoModal(); });
   elements.form.addEventListener('submit', saveRecord);
-  elements.search.addEventListener('input', renderRecords);
+  elements.search.addEventListener('input', () => {
+    window.clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = window.setTimeout(renderRecords, 120);
+  });
   elements.photoInput.addEventListener('change', handlePhotoSelected);
   elements.startRecording.addEventListener('click', startAudioRecording);
   elements.stopRecording.addEventListener('click', stopAudioRecording);
@@ -1100,15 +1541,45 @@ function initEvents() {
     updateFilterButtons();
     renderRecords();
   });
-  document.getElementById('passwordCategory').addEventListener('click', () => {
-    showToast('Özel parola kayıt formu bir sonraki aşamada eklenecek. Genel kayıtların şu anda şifreleniyor.');
-  });
+  // The password category is handled by the shared category-filter listener.
   const openSettings = () => {
     updateBiometricSettings();
     elements.settingsModal.hidden = false;
     document.body.classList.add('modal-open');
   };
   document.getElementById('settingsButton').addEventListener('click', openSettings);
+  elements.passwordForm.addEventListener('submit', savePasswordRecord);
+  document.querySelectorAll('.close-password-modal').forEach(button => button.addEventListener('click', closePasswordEditor));
+  elements.passwordModal.addEventListener('click', event => { if (event.target === elements.passwordModal) closePasswordEditor(); });
+  elements.passwordDetailModal.addEventListener('click', event => { if (event.target === elements.passwordDetailModal) closePasswordDetails(); });
+  document.querySelectorAll('.close-password-detail').forEach(button => button.addEventListener('click', closePasswordDetails));
+  elements.togglePasswordValue.addEventListener('click', () => {
+    const visible = elements.passwordValue.type === 'text';
+    elements.passwordValue.type = visible ? 'password' : 'text';
+    elements.togglePasswordValue.textContent = visible ? 'Göster' : 'Gizle';
+  });
+  elements.revealPasswordDetail.addEventListener('click', () => {
+    const visible = elements.passwordDetailValue.type === 'text';
+    elements.passwordDetailValue.type = visible ? 'password' : 'text';
+    elements.revealPasswordDetail.textContent = visible ? 'Göster' : 'Gizle';
+  });
+  document.getElementById('copyPasswordUsername').addEventListener('click', () => copySensitiveValue(elements.passwordDetailUsername.value, 'Kullanıcı adı'));
+  document.getElementById('copyPasswordValue').addEventListener('click', () => copySensitiveValue(elements.passwordDetailValue.value, 'Parola'));
+  document.getElementById('editPasswordFromDetail').addEventListener('click', () => {
+    const record = records.find(item => item.id === activePasswordRecordId);
+    closePasswordDetails();
+    if (record) openPasswordEditor(record);
+  });
+  document.getElementById('exportBackupButton').addEventListener('click', openBackupExport);
+  document.getElementById('importBackupButton').addEventListener('click', chooseBackupFile);
+  elements.gateRestoreBackup.addEventListener('click', chooseBackupFile);
+  elements.backupFileInput.addEventListener('change', handleBackupFileChosen);
+  elements.backupExportForm.addEventListener('submit', handleBackupExport);
+  elements.backupImportForm.addEventListener('submit', restoreEncryptedBackup);
+  document.querySelectorAll('.close-backup-export').forEach(button => button.addEventListener('click', closeBackupExport));
+  document.querySelectorAll('.close-backup-import').forEach(button => button.addEventListener('click', closeBackupImport));
+  elements.backupExportModal.addEventListener('click', event => { if (event.target === elements.backupExportModal) closeBackupExport(); });
+  elements.backupImportModal.addEventListener('click', event => { if (event.target === elements.backupImportModal) closeBackupImport(); });
   document.getElementById('mobileNavHome').addEventListener('click', () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   });
@@ -1172,6 +1643,10 @@ function initEvents() {
       if (!elements.photoModal.hidden) closePhotoModal();
       if (!elements.settingsModal.hidden) { elements.settingsModal.hidden = true; document.body.classList.remove('modal-open'); }
       if (!elements.changePasswordModal.hidden) { elements.changePasswordModal.hidden = true; elements.changePasswordForm.reset(); document.body.classList.remove('modal-open'); }
+      if (!elements.passwordModal.hidden) closePasswordEditor();
+      if (!elements.passwordDetailModal.hidden) closePasswordDetails();
+      if (!elements.backupExportModal.hidden) closeBackupExport();
+      if (!elements.backupImportModal.hidden) closeBackupImport();
     }
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
       event.preventDefault();
@@ -1198,7 +1673,11 @@ function initEvents() {
 async function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
   try {
-    await navigator.serviceWorker.register('./sw.js');
+    const registration = await navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' });
+    // Check once when the app opens; avoid polling or background network traffic.
+    if (navigator.onLine && registration && typeof registration.update === 'function') {
+      registration.update().catch(() => {});
+    }
   } catch (error) {
     console.warn('Çevrimdışı önbellek etkinleştirilemedi:', error);
   }

@@ -1,64 +1,73 @@
-# Bedrock — v0.4
+# Bedrock — v0.5
 
-Bedrock, notlarını, eşya konumlarını, ses kayıtlarını ve fotoğraflarını cihazında tutan; ana parola ile şifrelenmiş çevrimdışı bir PWA prototipidir.
+Bedrock; yazılı notları, eşya konumlarını, parola kayıtlarını, sesleri ve fotoğrafları cihazında tutan, çevrimdışı çalışabilen şifreli kişisel kasa PWA'sıdır.
 
-## v0.4 özellikleri
-- İlk açılışta ana parola ve kasa oluşturma ekranı
-- Ana parola üzerinden PBKDF2-SHA-256 (310.000 yineleme) ile anahtar türetme
-- Kayıt metaverilerinin AES-256-GCM ile şifrelenmesi
-- Ekli fotoğraf ve ses dosyalarının ayrı AES-256-GCM şifrelemesi
-- Var olan v0.2 notlarının ilk kasa kurulurken otomatik şifrelenerek korunması
-- Ana parola ile kilit açma ve uygulamayı elle kilitleme
-- Uygulama 5 dakikadan uzun süre arka planda kalırsa otomatik kilitleme
-- Ana parola değiştirme (eski biyometrik hızlı açma bu işlemde güvenlik nedeniyle kapatılır)
-- WebAuthn PRF desteği bulunan cihazlarda biyometrik/cihaz doğrulamasıyla hızlı açma
-- Telefon ekranları için yeniden düzenlenmiş mobil arayüz
-- Alt gezinme çubuğu, daha büyük dokunma alanları ve mobil alt sayfa (bottom-sheet) pencereleri
-- WebAuthn PRF desteği yoksa parola ile girişe geri dönüş
+## v0.5 yenilikleri
 
-## Şifreleme tasarımı
-- Uygulama her kasa için rastgele 256 bitlik bir veri anahtarı üretir.
-- Ana parola, rastgele salt ile PBKDF2-SHA-256 kullanılarak AES-GCM anahtarına dönüştürülür. Veri anahtarı bu anahtarla sarılır; ana parolanın kendisi saklanmaz.
-- Her kayıt metaverisi ve her ek dosya AES-GCM ile ayrı IV kullanılarak şifrelenir. Kayıt kimliği ek doğrulama verisine (AAD) dahil edilir.
-- Şifrelenmiş kayıtlar IndexedDB'de tutulur. Arama, kasa açıkken belleğe alınmış ve çözülmüş kayıtlar üzerinde yapılır.
-- Biyometrik hızlı açma, WebAuthn PRF uzantısının desteklendiği cihazlarda PRF çıktısından HKDF ile türetilen anahtarla veri anahtarını sarar. Yalnızca parmak izi/cihaz doğrulamasının başarılı olduğu WebAuthn akışından PRF çıktısı alınabiliyorsa etkinleştirilir. Bu özellik her Android cihazda veya tarayıcıda bulunmaz.
+- **Parola kayıtları:** Hizmet adı, kullanıcı adı/e-posta, parola, site adresi ve ek notlar tek kayıt içinde saklanır.
+- **Hassas gösterim:** Parolalar kayıt listesinde gösterilmez. Detay ekranında kullanıcı açabilir veya tek tek kopyalayabilir.
+- **Şifreli yedekleme:** Kasa ana parolası tekrar doğrulanır; yedek dosyasının tamamı ayrıca AES-256-GCM ile şifrelenir.
+- **Geri yükleme:** `.bedrock` yedeği seçilir, ana parola ile açılır ve açık onaydan sonra mevcut kasa yerine yüklenir. Yedek dosyası için 100 MB boyut sınırı uygulanır.
+- **Biyometrik kayıtlar:** Yedek dosyasına cihaz-özel biyometrik bağ eklenmez; geri yüklemeden sonra biyometrik hızlı açma tekrar kurulabilir.
+- **Fotoğraf optimizasyonu:** Büyük görseller uygunsa 1600 piksel uzun kenara ve JPEG kalite 0.82 seviyesine indirilerek saklanır.
+- **Mobil performans:** Kayıtlar küçük gruplar halinde çözülür, arama 120 ms gecikmeyle toplulaştırılır, liste DOM'a tek parça eklenir ve mobilde ağır arka plan bulanıklığı azaltılır.
+- **PWA güncellemesi:** Service Worker önbelleği v5 olarak yenilenir. Aynı yayın adresi ve tarayıcı profili korunur.
 
-## Çok önemli güvenlik notları
-- Ana parolanı unutursan ve biyometrik açma da kullanılamazsa veriler kurtarılamaz. Bu uygulamada henüz kurtarma veya yedek geri yükleme özelliği yoktur. Ana parolayı güvenli bir yerde sakla.
-- Biyometrik hızlı açma cihazın WebAuthn PRF desteğine bağlıdır. Uygulama ayarlarında destek yoksa etkinleştirme başarısız olur; ana parola her zaman temel giriş yöntemidir.
-- Biyometrik kayıt, uygulamanın kurulu olduğu web alan adına bağlıdır. Uygulama başka bir alan adına taşınırsa WebAuthn biyometrik kaydını yeniden kurman gerekir.
-- Cihazın işletim sistemi kilidi, güncel tarayıcı ve güvenli HTTPS bağlantısı kullanılmalıdır.
-- Şifreleme, cihazda uygulama açıkken ve kasa kilidi kaldırılmışken kötü amaçlı yazılıma veya ele geçirilmiş tarayıcıya karşı mutlak koruma sağlamaz. Uygulamayı yalnızca güvendiğin bir HTTPS alanında barındır.
-- Uygulamayı veya tarayıcı site verilerini silmek IndexedDB kayıtlarını silebilir. Bu yüzden gerçek ve tek kopya kayıtlarını saklamadan önce şifreli yedekleme özelliğinin sonraki sürümde eklenmesini bekle.
-- Bu sürüm parola alanları için ayrı bir parola yöneticisi arayüzü sağlamaz; şifreli genel kayıt kasasıdır.
+## v0.4'ten yükseltme
 
-## Kurulum ve test
-Geliştirme için proje klasöründe:
+1. Önce mevcut Bedrock yedeğini alabilir durumdaysan yedekle. v0.4'te dışa aktarma yoksa, kritik tek kopya kayıtlarını yedekleme eklenene kadar silme.
+2. v0.5 dosyalarını aynı HTTPS alan adına ve aynı klasör yoluna yükle. `manifest.webmanifest` içindeki `id`, `start_url` ve `scope` değerlerini değiştirme.
+3. Telefonda aynı Chrome profiliyle Bedrock'u çevrimiçiyken bir kez aç. Service Worker yeni önbelleği kurar.
+4. Var olan kasa ana parolasıyla giriş yap. v0.5 mevcut `bedrock-local` IndexedDB veritabanını ve şemayı korur.
+
+> GitHub Pages/host üzerinde dosyaları güncelledikten sonra tarayıcı eski uygulamayı göstermeye devam ederse uygulamayı tamamen kapatıp yeniden aç. Site verilerini veya IndexedDB'yi temizleme.
+
+## Şifreleme
+
+- Kasa veri anahtarı rastgele 256 bit olarak oluşturulur.
+- Ana parola PBKDF2-HMAC-SHA-256 ile 310.000 yineleme kullanılarak AES-256-GCM anahtarına dönüştürülür ve veri anahtarını sarmalar.
+- Not metaverisi, parola alanları, fotoğraflar ve sesler ayrı IV ve kayıt/ek kimliğiyle ilişkili ek doğrulama verisi (AAD) kullanılarak AES-GCM ile şifrelenir.
+- Dışa aktarılan yedek, aynı ana parola yeniden doğrulandıktan sonra yeni salt ve IV ile ayrıca AES-256-GCM olarak şifrelenir.
+- Şifreli yedek dosyası tüm kayıtları ve kasa anahtarının parola ile sarılmış yapılandırmasını içerir. Geri yükleme yedeğin alındığı dönemdeki ana parolayı gerektirir.
+- Arama yalnızca kasa açıkken belleğe alınmış çözülmüş alanlarda yapılır. Parola değerinin kendisi arama dizisine eklenmez.
+
+## Yedekleme kullanımı
+
+**Yedek oluştur:** Ayarlar → Şifreli yedek oluştur → ana parolanı tekrar gir → `.bedrock` dosyasını ayrı ve güvenli bir yerde sakla.
+
+**Geri yükle:** Kilit ekranındaki veya Ayarlar bölümündeki geri yükleme düğmesi → `.bedrock` dosyasını seç → yedek alındığında kullanılan ana parolayı gir → mevcut kasanın tamamının değişeceğini onayla.
+
+Geri yükleme birleştirme yapmaz; mevcut kayıtların yerine yedek içeriğini koyar. Başka cihazda biyometrik hızlı açma devre dışı kalır ve yeniden kurulması gerekir.
+
+## Güvenlik uyarıları
+
+- Ana parolanı unutursan ve kullanılabilir biyometrik açman yoksa kasa ve yedekler kurtarılamaz.
+- Yedek dosyası ile ana parolayı aynı yerde saklama.
+- Ana parolanı değiştirdikten sonra eski yedekler, yedeği aldığın tarihteki eski ana parolayı kullanır.
+- Bedrock tarayıcı depolamasını kullanır. Uygulama verisini/tarayıcı site verilerini silmek yerel verileri silebilir.
+- Kasa açıkken cihazına erişebilen zararlı yazılım, ekran kaydı veya kötü amaçlı uzantılar çözülmüş bilgileri okuyabilir. Şifreleme her saldırı türüne karşı mutlak koruma değildir.
+- Bu proje kişisel bir prototiptir; kritik hesapların için profesyonel, denetlenmiş bir parola yöneticisinin yerini aldığı varsayılmamalıdır.
+- Parolayı görüntüleme/kopyalama işlemi yalnızca kullanıcının açıkça seçmesiyle yapılır. Pano içeriği diğer uygulamalarda erişilebilir olabilir; gerekmiyorsa kopyalama.
+
+## Yerel geliştirme
 
 ```bash
 python -m http.server 8000
 ```
 
-Bilgisayarda `http://localhost:8000` adresini aç. `localhost`, geliştirme sırasında Web Crypto ve Service Worker için güvenli bağlam olarak kabul edilir. Android'de kullanmak için tüm dosyaları HTTPS destekleyen bir statik barındırma alanına yükle; Android tarayıcısında açıp **Ana ekrana ekle / Uygulamayı yükle** seçeneğini kullan. İlk kurulumdan sonra Service Worker uygulama kabuğunu çevrimdışı açmaya hazırlar.
+Bilgisayarda `http://localhost:8000` açılır. Android cihazda kamera, mikrofon, Web Crypto, Service Worker ve WebAuthn için HTTPS gerekir. Telefonda, uygulamayı daha önce kullandığın **aynı origin** üzerinden aç.
 
-## v0.2'den yükseltme
-- Önce v0.2'nin kurulu olduğu aynı tarayıcı profili ve aynı web alan adını kullan.
-- v0.3'ü aynı adreste yayınla ve aç. IndexedDB sürümü yükseltilir; mevcut notlar ve medya ilk ana parola oluşturulduğunda şifrelenir.
-- İlk kasa kurulumundan sonra uygulama eski kayıtları şifreli biçime dönüştürür. İşlem bitmeden sekmeyi kapatma.
-- v0.2 verileri başka tarayıcı profiline veya farklı bir alan adına otomatik taşınmaz.
+## Android APK / TWA paketleme
 
-## Sınırlar
-- WebAuthn PRF gerçek Android telefonunda ayrıca denenmelidir; bu geliştirme ortamında biyometrik donanım test edilemez.
-- Ses kaydı için MediaRecorder, mikrofon izni ve HTTPS gerekir. Kamera/galeri Android dosya seçicisini kullanır.
-- Ses kaydı en fazla 10 dakika, tek fotoğraf dosyası en fazla 18 MB olabilir.
-- Şifreli dışa aktarma/geri yükleme bu sürümde henüz yoktur.
+Bedrock önce HTTPS üzerinde yayınlanan bir PWA olarak kalır. Android uygulaması oluşturmak için PWABuilder arayüzü kullanılabilir; PWABuilder Android çıktısı Bubblewrap tabanlı Trusted Web Activity (TWA) üretir. Android Studio'yu elle kullanmadan paket hazırlanabilir, ancak paketlemenin arka planında Android araç zinciri kullanılır.
 
+Ayrıntılı adımlar için `ANDROID-PACKAGING.md` dosyasına bak. TWA'nın tam ekran doğrulaması için imzalı uygulamaya ait SHA-256 sertifika parmak izini içeren `/.well-known/assetlinks.json` dosyası sitenin origin kökünde yayınlanmalıdır.
 
-## v0.4 mobil arayüz notları
-- Dar ekranlarda iki sütunlu hızlı erişim kartları ve yatay kaydırılabilir kategori filtreleri kullanılır.
-- Alt gezinme çubuğu Ana sayfa, Ara, yeni not ve Ayarlar kısayollarını sunar.
-- Form pencereleri telefonlarda alt sayfa biçiminde açılır; güvenli alan (safe-area) boşlukları dikkate alınır.
-- Bu sürüm aynı IndexedDB veritabanı adını ve şemasını korur. Aynı alan adı ve tarayıcı profiliyle yükseltme yapıldığında mevcut kayıtların silinmesi beklenmez.
+## Teknik dosyalar
 
-## APK / Android uygulamasına dönüştürme
-Bedrock şu anda yüklenebilir bir PWA'dır: Android tarayıcısında ana ekrana eklenince tarayıcı çerçevesi olmadan ayrı bir uygulama penceresinde açılır. İstenirse sonraki aşamada bu PWA, Trusted Web Activity veya Capacitor kullanılarak Android APK/AAB biçiminde paketlenebilir. APK paketlemeden önce mobil arayüz ve gerçek cihaz testlerinin tamamlanması önerilir.
+- `index.html` — uygulama yapısı
+- `styles.css` — masaüstü ve mobil görünüm
+- `app.js` — kasa, şifreleme, parola kayıtları, kamera/ses ve yedekleme
+- `sw.js` — çevrimdışı uygulama kabuğu (v5 cache)
+- `manifest.webmanifest` — PWA/Android uygulama metaverisi
+- `icons/` — uygulama simgeleri
