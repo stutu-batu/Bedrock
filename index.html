@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#11151b">
+  <meta name="description" content="Bedrock — kişisel, çevrimdışı kayıt alanın.">
+  <title>Bedrock</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/bedrock.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="vault-locked">
+  <div class="security-gate" id="securityGate">
+    <section class="security-card" aria-labelledby="gateTitle">
+      <div class="security-brand"><span class="security-brand-mark">◆</span><span>BEDROCK</span></div>
+      <p class="eyebrow">KİŞİSEL KASAN</p>
+      <h1 id="gateTitle">Kişisel kasanı oluştur.</h1>
+      <p class="security-description" id="gateSubtitle">Bir ana parola belirle. Bedrock kayıtlarını bu parola ile cihazında şifreleyecek.</p>
+      <form id="gateForm">
+        <label class="field-label" for="gatePassword">Ana parola</label>
+        <input class="text-field" id="gatePassword" type="password" minlength="12" maxlength="256" autocomplete="current-password" placeholder="En az 12 karakter" required>
+        <div id="gateConfirmWrap">
+          <label class="field-label" for="gateConfirmPassword">Ana parolayı tekrar yaz</label>
+          <input class="text-field" id="gateConfirmPassword" type="password" minlength="12" maxlength="256" autocomplete="new-password" placeholder="Parolanı tekrar gir">
+        </div>
+        <p class="security-error" id="gateError" role="alert"></p>
+        <button class="button-primary security-submit" id="gateSubmit" type="submit">Güvenli kasayı oluştur</button>
+        <button class="button-secondary security-biometric" id="gateBiometricButton" type="button" hidden>Parmak izi / cihaz doğrulamasıyla aç</button>
+      </form>
+      <p class="security-footnote">Ana parolanı unutursan Bedrock kayıtlarını kurtaramaz. Parola sunucuya gönderilmez; cihazında anahtar türetmek için kullanılır.</p>
+    </section>
+  </div>
+
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="#home" aria-label="Bedrock ana sayfa">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 40 40" role="img"><path d="M20 3 34 11v17L20 37 6 28V11L20 3Z" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="m20 9 8 5v10l-8 6-8-6V14l8-5Z" fill="currentColor" opacity=".22"/><path d="m12 14 8 5 8-5M20 19v11" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+        </span>
+        <span class="brand-name">bedrock<span>.</span></span>
+      </a>
+      <div class="topbar-right">
+        <span class="offline-pill"><span class="status-dot"></span> Cihazında</span>
+        <button class="icon-button" id="settingsButton" type="button" aria-label="Ayarlar" title="Ayarlar">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.8a3.2 3.2 0 1 0 0 6.4 3.2 3.2 0 0 0 0-6.4Z"/><path d="m19.4 13.5 1.1.9-1.1 1.9-1.4-.5a7.8 7.8 0 0 1-1.5.9l-.2 1.5h-2.2l-.4-1.4a7.5 7.5 0 0 1-1.7 0l-.8 1.2-1.9-1.1.5-1.4a7.8 7.8 0 0 1-.9-1.5l-1.5-.2v-2.2l1.4-.4a7.5 7.5 0 0 1 0-1.7l-1.2-.8 1.1-1.9 1.4.5a7.8 7.8 0 0 1 1.5-.9l.2-1.5h2.2l.4 1.4a7.5 7.5 0 0 1 1.7 0l.8-1.2 1.9 1.1-.5 1.4a7.8 7.8 0 0 1 .9 1.5l1.5.2v2.2l-1.4.4a7.5 7.5 0 0 1 0 1.7Z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <main id="home" class="main-content">
+      <section class="welcome-row">
+        <div>
+          <p class="eyebrow">KİŞİSEL KAYIT ALANIN</p>
+          <h1>Unutmak zorunda<br class="mobile-break"> değilsin.</h1>
+          <p class="welcome-copy">Aklında kalmasını istediğin her şey için tek bir yer.</p>
+        </div>
+        <div class="welcome-art" aria-hidden="true">
+          <div class="art-orbit orbit-one"></div>
+          <div class="art-orbit orbit-two"></div>
+          <div class="art-core"><svg viewBox="0 0 64 64"><path d="M32 5 54 18v28L32 59 10 46V18L32 5Z"/><path d="m32 15 13 8v17l-13 9-13-9V23l13-8Z"/><path d="m19 23 13 9 13-9M32 32v17"/></svg></div>
+        </div>
+      </section>
+
+      <section class="quick-section" aria-labelledby="quickHeading">
+        <div class="section-heading">
+          <div><p class="eyebrow">HIZLI ERİŞİM</p><h2 id="quickHeading">Hızlı kayıt</h2></div>
+          <span class="section-note">Tek dokunuşla başla</span>
+        </div>
+        <div class="quick-grid">
+          <button class="quick-card quick-text" id="newNoteButton" type="button">
+            <span class="quick-icon"><svg viewBox="0 0 24 24"><path d="M5 4.5h14v15H5zM8 8h8M8 12h8M8 16h5"/></svg></span>
+            <span class="quick-title">Yazılı not</span>
+            <span class="quick-desc">Aklındakini yaz</span>
+            <span class="quick-arrow">↗</span>
+          </button>
+          <button class="quick-card quick-audio" id="newAudioButton" type="button">
+            <span class="quick-icon"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3m-4 0h8"/></svg></span>
+            <span class="quick-title">Ses kaydı</span>
+            <span class="quick-desc">Konuş ve kaydet</span>
+            <span class="quick-arrow">↗</span>
+          </button>
+          <button class="quick-card quick-photo" id="newPhotoButton" type="button">
+            <span class="quick-icon"><svg viewBox="0 0 24 24"><path d="M4 7h3l1.5-2h7L17 7h3v12H4z"/><circle cx="12" cy="13" r="3.5"/></svg></span>
+            <span class="quick-title">Fotoğraf</span>
+            <span class="quick-desc">Kamerayla görüntü ekle</span>
+            <span class="quick-arrow">↗</span>
+          </button>
+          <button class="quick-card quick-object" id="newObjectButton" type="button">
+            <span class="quick-icon"><svg viewBox="0 0 24 24"><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3Z"/><path d="m4.5 8 7.5 4.3L19.5 8M12 12.3V21"/></svg></span>
+            <span class="quick-title">Eşya kaydı</span>
+            <span class="quick-desc">Nereye koyduğunu yaz</span>
+            <span class="quick-arrow">↗</span>
+          </button>
+        </div>
+      </section>
+
+      <section class="records-section" aria-labelledby="recordsHeading">
+        <div class="section-heading records-heading">
+          <div><p class="eyebrow">KÜTÜPHANEN</p><h2 id="recordsHeading">Kayıtların</h2></div>
+          <span class="record-count" id="recordCount">0 KAYIT</span>
+        </div>
+        <label class="search-box" for="searchInput">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 4.5 4.5"/></svg>
+          <input id="searchInput" type="search" placeholder="Kayıtlarında ara..." autocomplete="off">
+          <kbd>⌘ K</kbd>
+        </label>
+        <div class="category-row" id="categoryFilters" aria-label="Kategoriler">
+          <button class="filter-chip active" data-category="all" type="button">Tümü <span id="allCount">0</span></button>
+          <button class="filter-chip" data-category="note" type="button">Notlar</button>
+          <button class="filter-chip" data-category="object" type="button">Eşya konumları</button>
+          <button class="filter-chip locked-chip" id="passwordCategory" type="button" title="Özel parola kayıt formu sonraki aşamada eklenecek"><svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>Parolalar <span class="tiny-lock">yakında</span></button>
+        </div>
+        <div class="records-list" id="recordsList" aria-live="polite">
+          <div class="empty-state" id="emptyState">
+            <div class="empty-icon"><svg viewBox="0 0 24 24"><path d="M6 3.5h8l4 4V20H6z"/><path d="M14 3.5V8h4M9 12h6M9 16h6"/></svg></div>
+            <h3>Henüz bir kaydın yok</h3>
+            <p>İlk notunu ekleyerek Bedrock'u doldurmaya başla.</p>
+            <button class="text-action" id="emptyAddButton" type="button">İlk kaydını oluştur <span>↗</span></button>
+          </div>
+        </div>
+      </section>
+
+      <footer class="app-footer"><span class="footer-mark">◆</span> BEDROCK <span class="footer-separator">·</span> Kayıtların cihazında kalır.</footer>
+    </main>
+  </div>
+
+  <input id="photoInput" class="visually-hidden" type="file" accept="image/*" capture="environment" aria-label="Fotoğraf seç veya çek">
+
+  <div class="modal-backdrop" id="audioModal" hidden>
+    <section class="modal-card media-modal" role="dialog" aria-modal="true" aria-labelledby="audioModalTitle">
+      <div class="modal-topline"><span class="modal-kicker">HIZLI SES KAYDI</span><button class="icon-button close-audio-modal" type="button" aria-label="Kapat">×</button></div>
+      <h2 id="audioModalTitle">Aklından geçenleri kaydet.</h2>
+      <p class="modal-subtitle">Mikrofon izni verildiğinde kayda başlayabilirsin.</p>
+      <div class="recorder-panel" id="recorderPanel">
+        <div class="recording-orb" id="recordingOrb"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3m-4 0h8"/></svg></div>
+        <strong id="recordingStatus">Kayda hazır</strong>
+        <span class="recording-timer" id="recordingTimer">00:00</span>
+        <p class="recorder-hint" id="recordingHint">Başlamak için kayıt düğmesine dokun.</p>
+      </div>
+      <audio id="audioPreview" class="media-preview-audio" controls hidden></audio>
+      <label class="field-label" for="audioTitle">Kayıt başlığı</label>
+      <input class="text-field" id="audioTitle" maxlength="100" placeholder="Örn. Aklıma gelen fikir">
+      <label class="field-label" for="audioDescription">Açıklama (isteğe bağlı)</label>
+      <textarea class="text-field text-area" id="audioDescription" rows="3" maxlength="5000" placeholder="Bu ses kaydı hakkında kısa bir not..."></textarea>
+      <div class="form-actions recorder-actions">
+        <button class="button-secondary close-audio-modal" type="button">Vazgeç</button>
+        <button class="button-secondary" id="startRecordingButton" type="button">● Kayda başla</button>
+        <button class="button-secondary" id="stopRecordingButton" type="button" disabled>Kaydı durdur</button>
+        <button class="button-primary" id="saveAudioButton" type="button" disabled>Kaydet ↗</button>
+      </div>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" id="photoModal" hidden>
+    <section class="modal-card media-modal" role="dialog" aria-modal="true" aria-labelledby="photoModalTitle">
+      <div class="modal-topline"><span class="modal-kicker">FOTOĞRAFLI KAYIT</span><button class="icon-button close-photo-modal" type="button" aria-label="Kapat">×</button></div>
+      <h2 id="photoModalTitle">Görüntüyü sakla.</h2>
+      <p class="modal-subtitle">Fotoğrafı bir notla veya eşya konumuyla birlikte kaydet.</p>
+      <img id="photoPreview" class="photo-preview" alt="Kaydedilecek fotoğrafın önizlemesi">
+      <label class="field-label" for="photoTitle">Kayıt başlığı</label>
+      <input class="text-field" id="photoTitle" maxlength="100" placeholder="Örn. Kışlık eşyalar kutusu" required>
+      <label class="field-label" for="photoCategory">Kayıt türü</label>
+      <select class="text-field select-field" id="photoCategory"><option value="object">Eşya konumu</option><option value="note">Genel not</option></select>
+      <label class="field-label" for="photoDescription">Konum / açıklama</label>
+      <textarea class="text-field text-area" id="photoDescription" rows="3" maxlength="5000" placeholder="Örn. Antredeki üst dolabın mavi kutusu..."></textarea>
+      <div class="form-actions"><button class="button-secondary close-photo-modal" type="button">Vazgeç</button><button class="button-primary" id="savePhotoButton" type="button">Fotoğrafı kaydet ↗</button></div>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" id="noteModal" hidden>
+    <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="modal-topline"><span class="modal-kicker">YENİ KAYIT</span><button class="icon-button close-modal" type="button" aria-label="Kapat">×</button></div>
+      <h2 id="modalTitle">Aklında kalmasın.</h2>
+      <p class="modal-subtitle">Şimdi kaydet, gerektiğinde bul.</p>
+      <form id="noteForm">
+        <label class="field-label" for="noteTitle">Başlık</label>
+        <input class="text-field" id="noteTitle" name="title" maxlength="100" placeholder="Örn. Yedek anahtar" required>
+        <label class="field-label" for="noteCategory">Kayıt türü</label>
+        <select class="text-field select-field" id="noteCategory" name="category">
+          <option value="note">Genel not</option>
+          <option value="object">Eşya konumu</option>
+        </select>
+        <label class="field-label" for="noteBody">Açıklama</label>
+        <textarea class="text-field text-area" id="noteBody" name="body" rows="5" maxlength="10000" placeholder="Buraya hatırlamak istediğin bilgileri yaz..."></textarea>
+        <div class="form-actions"><button class="button-secondary close-modal" type="button">Vazgeç</button><button class="button-primary" id="saveNoteButton" type="submit">Kaydet <span>↗</span></button></div>
+      </form>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" id="settingsModal" hidden>
+    <section class="modal-card security-settings-modal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+      <div class="modal-topline"><span class="modal-kicker">GÜVENLİK</span><button class="icon-button close-settings-modal" type="button" aria-label="Kapat">×</button></div>
+      <h2 id="settingsTitle">Kasa ayarları.</h2>
+      <p class="modal-subtitle">Kayıtların AES-GCM ile cihazında şifrelenir.</p>
+      <div class="security-status-row"><span class="security-status-icon">◆</span><div><strong>Ana parola koruması</strong><p>Her kayıt, ana parolandan türetilen anahtarla korunur.</p></div><span class="status-label">Etkin</span></div>
+      <div class="security-status-row"><span class="security-status-icon">◉</span><div><strong>Biyometrik hızlı açma</strong><p id="biometricStatus">Kapalı. Ana parola her açılışta kullanılacak.</p></div></div>
+      <button class="button-secondary settings-action" id="enableBiometricButton" type="button">Biyometrik kilidi etkinleştir</button>
+      <button class="button-secondary settings-action" id="disableBiometricButton" type="button" hidden>Biyometrik kilidi kapat</button>
+      <button class="button-secondary settings-action" id="openChangePasswordButton" type="button">Ana parolayı değiştir</button>
+      <div class="settings-divider"></div>
+      <button class="button-primary settings-action lock-action" id="lockNowButton" type="button">Şimdi kilitle</button>
+      <p class="security-footnote">Biyometrik açma yalnızca cihaz ve tarayıcı WebAuthn PRF desteği sunarsa kullanılabilir. Destek yoksa ana parola ile giriş yaparsın.</p>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" id="changePasswordModal" hidden>
+    <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="changePasswordTitle">
+      <div class="modal-topline"><span class="modal-kicker">KASA GÜVENLİĞİ</span><button class="icon-button close-change-password" type="button" aria-label="Kapat">×</button></div>
+      <h2 id="changePasswordTitle">Ana parolayı değiştir.</h2>
+      <p class="modal-subtitle">Yeni parola mevcut şifreleme anahtarını yeniden korur.</p>
+      <form id="changePasswordForm">
+        <label class="field-label" for="currentMasterPassword">Mevcut parola</label>
+        <input class="text-field" id="currentMasterPassword" type="password" autocomplete="current-password" required>
+        <label class="field-label" for="newMasterPassword">Yeni parola</label>
+        <input class="text-field" id="newMasterPassword" type="password" minlength="12" maxlength="256" autocomplete="new-password" placeholder="En az 12 karakter" required>
+        <label class="field-label" for="confirmMasterPassword">Yeni parolayı tekrar yaz</label>
+        <input class="text-field" id="confirmMasterPassword" type="password" minlength="12" maxlength="256" autocomplete="new-password" required>
+        <p class="security-error" id="changePasswordError" role="alert"></p>
+        <p class="security-footnote">Parola değişince biyometrik hızlı açma güvenlik nedeniyle kapatılır. İstersen ayarlardan yeniden kurabilirsin.</p>
+        <div class="form-actions"><button class="button-secondary close-change-password" type="button">Vazgeç</button><button class="button-primary" type="submit">Parolayı değiştir</button></div>
+      </form>
+    </section>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="app.js" defer></script>
+</body>
+</html>
