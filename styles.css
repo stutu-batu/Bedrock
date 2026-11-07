@@ -39,3 +39,106 @@ body.vault-locked .app-shell{display:none}
 .settings-divider{height:1px;margin:18px 0 8px;background:rgba(139,155,170,.17)}
 .lock-action{border-color:#a9cf7d;background:#a9cf7d;color:#182116}
 @media(max-width:520px){.security-card{padding:27px 22px}.security-card h1{font-size:26px}.security-brand{margin-bottom:27px}}
+
+
+/* Bedrock v0.4 — mobile-first app layout */
+.mobile-dock{display:none}
+:where(button,a,input,textarea,select){-webkit-tap-highlight-color:transparent}
+button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+@media(max-width:720px){
+  html{scroll-padding-top:78px;scroll-padding-bottom:96px}
+  body{background:radial-gradient(ellipse at 90% 0%,rgba(157,203,105,.075),transparent 23rem),var(--bg)}
+  body.modal-open{overscroll-behavior:none}
+  .app-shell{width:100%;max-width:560px;padding:0 18px calc(94px + env(safe-area-inset-bottom))}
+  .topbar{position:sticky;top:0;z-index:8;height:64px;margin:0 -18px;padding:0 18px;background:rgba(17,21,27,.9);border-bottom:1px solid rgba(138,155,169,.12);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}
+  .brand{gap:9px}.brand-mark{width:31px;height:31px}.brand-name{font-size:20px}
+  .topbar-right{gap:10px}.offline-pill{padding:7px 10px;font-size:9px}.icon-button{width:42px;height:42px;border-radius:13px}
+  .main-content{padding:29px 0 10px}
+  .welcome-row{min-height:0;padding:0 0 12px;overflow:visible}
+  .welcome-row>div:first-child{position:relative;z-index:1}
+  .welcome-row .eyebrow{font-size:9px;letter-spacing:.16em;margin-bottom:9px}
+  .welcome-row h1{max-width:340px;font-size:clamp(31px,8.7vw,39px);line-height:1.08;letter-spacing:-1.9px}
+  .mobile-break{display:inline}
+  .welcome-copy{max-width:265px;margin-top:10px;font-size:12px;line-height:1.55}
+  .welcome-art{position:absolute;right:-28px;top:-8px;width:124px;height:124px;margin:0;opacity:.28;transform:scale(.82)}
+  .art-core{width:66px;height:66px;border-radius:20px}.art-core svg{width:48px;height:48px}
+  .orbit-one{width:132px;height:58px}.orbit-two{width:104px;height:104px}
+  .quick-section{margin-top:23px}
+  .section-heading{align-items:flex-end;margin-bottom:13px}
+  .section-heading .eyebrow{font-size:8px;margin-bottom:5px}
+  .section-heading h2{font-size:20px;letter-spacing:-.55px}
+  .section-note{font-size:9px;padding-bottom:2px}
+  .quick-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .quick-card{min-height:116px;padding:13px 13px 12px;border-radius:16px;background:linear-gradient(145deg,#1d252e,#171e26)}
+  .quick-icon{width:34px;height:34px;margin-bottom:9px;border-radius:11px}
+  .quick-title{font-size:12px}.quick-desc{font-size:10px;line-height:1.3;margin-top:3px}
+  .quick-arrow{top:12px;right:13px;font-size:13px}
+  .records-section{margin-top:31px;scroll-margin-top:76px}
+  .records-heading{margin-bottom:12px}
+  .record-count{font-size:9px;letter-spacing:.09em}
+  .search-box{height:50px;gap:10px;padding:0 13px;border-radius:14px}
+  .search-box input{font-size:14px;min-width:0}
+  .search-box kbd{display:none}
+  .category-row{gap:7px;margin:13px -18px 14px;padding:0 18px 5px;scroll-snap-type:x proximity}
+  .filter-chip{min-height:37px;padding:8px 12px;font-size:10px;scroll-snap-align:start}
+  .records-list{min-height:125px}
+  .record-card{align-items:flex-start;gap:10px;padding:13px 12px;margin-bottom:9px;border-radius:14px}
+  .record-symbol{width:38px;height:38px;border-radius:12px}
+  .record-main{padding-top:1px}
+  .record-title{font-size:13px;line-height:1.35;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+  .record-preview{font-size:11px;line-height:1.45;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+  .record-meta{flex-wrap:wrap;gap:6px;margin-top:7px;font-size:9px}
+  .record-actions{gap:2px;margin-left:auto}
+  .record-action{width:36px;height:36px;border-radius:10px}
+  .record-attachments{gap:8px;margin-top:10px}
+  .attachment-image-link{width:88px;height:72px;border-radius:10px}
+  .attachment-audio{width:min(100%,215px);padding:8px;border-radius:10px}
+  .attachment-audio audio{max-width:100%}
+  .empty-state{padding:27px 16px 31px;border-radius:16px}
+  .empty-state h3{font-size:14px}.empty-state p{max-width:250px;font-size:11px;line-height:1.5}
+  .app-footer{padding:25px 0 2px;font-size:8px;letter-spacing:.09em}
+  .mobile-dock{position:fixed;z-index:30;left:10px;right:10px;bottom:calc(8px + env(safe-area-inset-bottom));height:66px;display:grid;grid-template-columns:1fr 1fr 1.12fr 1fr;align-items:center;padding:6px 8px;border:1px solid rgba(146,164,178,.17);border-radius:21px;background:rgba(25,31,39,.94);box-shadow:0 12px 38px rgba(0,0,0,.42);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px)}
+  .dock-item{height:52px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;border:0;border-radius:14px;background:transparent;color:#82909d;font-size:9px;font-weight:600;cursor:pointer}
+  .dock-item svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round}
+  .dock-item.is-active{color:var(--accent)}
+  .dock-add{width:48px;height:48px;justify-self:center;display:grid;place-items:center;border:0;border-radius:16px;background:var(--accent);color:#1b2418;box-shadow:0 6px 18px rgba(198,238,135,.18);cursor:pointer}
+  .dock-add svg{width:23px;height:23px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
+  .modal-backdrop{align-items:end;padding:0;background:rgba(3,6,9,.72);backdrop-filter:blur(9px)}
+  .modal-card{width:100%;max-width:560px;max-height:min(91dvh,820px);padding:21px 18px calc(20px + env(safe-area-inset-bottom));border:1px solid rgba(139,155,170,.2);border-bottom:0;border-radius:24px 24px 0 0;background:#171e26;box-shadow:0 -18px 50px rgba(0,0,0,.35);animation:sheet-in .22s ease-out}
+  @keyframes sheet-in{from{opacity:.7;transform:translateY(28px)}to{opacity:1;transform:translateY(0)}}
+  .modal-card h2{font-size:23px;letter-spacing:-.7px}
+  .modal-subtitle{font-size:12px;line-height:1.5;margin-bottom:18px}
+  .field-label{font-size:11px;margin:15px 0 7px}
+  .text-field{min-height:48px;padding:13px 14px;border-radius:12px;font-size:16px}
+  .text-area{min-height:116px;line-height:1.5}
+  .form-actions{display:grid;grid-template-columns:1fr 1.15fr;gap:9px;margin-top:18px}
+  .button-secondary,.button-primary{min-height:48px;padding:12px;border-radius:12px;font-size:13px}
+  .security-gate{place-items:center;padding:16px;overflow-y:auto}
+  .security-card{width:100%;max-width:460px;padding:27px 22px calc(25px + env(safe-area-inset-bottom));border-radius:23px}
+  .security-brand{margin-bottom:26px}
+  .security-card h1{font-size:27px;letter-spacing:-.9px}
+  .security-description{font-size:13px;line-height:1.6}
+  .security-card .text-field{min-height:50px;font-size:16px}
+  .security-submit,.security-biometric{min-height:49px;border-radius:12px;font-size:13px}
+  .security-footnote{font-size:10px;line-height:1.6}
+  .security-status-row{gap:10px;padding:13px 0}
+  .security-status-row strong{font-size:12px}.security-status-row p{font-size:10px}
+  .settings-action{min-height:47px;border-radius:12px;font-size:12px}
+  .toast{bottom:calc(88px + env(safe-area-inset-bottom));font-size:12px}
+}
+@media(max-width:380px){
+  .app-shell{padding-left:15px;padding-right:15px}
+  .topbar{margin-left:-15px;margin-right:-15px;padding-left:15px;padding-right:15px}
+  .offline-pill{font-size:8px;padding:6px 8px}
+  .welcome-row h1{font-size:32px}
+  .quick-grid{gap:8px}.quick-card{min-height:110px;padding:12px}
+  .category-row{margin-left:-15px;margin-right:-15px;padding-left:15px;padding-right:15px}
+  .record-card{gap:8px;padding:11px 10px}
+  .record-actions{flex-direction:column}
+  .record-action{width:33px;height:33px}
+}
+@media(max-width:720px) and (max-height:560px){
+  .mobile-dock{height:58px}.dock-item{height:46px}.dock-add{width:42px;height:42px}
+  .security-gate{align-items:start}.security-card{margin:auto 0}
+}
+@media(min-width:721px){.mobile-dock{display:none!important}}

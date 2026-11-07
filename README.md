@@ -1,8 +1,8 @@
-# Bedrock — v0.3
+# Bedrock — v0.4
 
 Bedrock, notlarını, eşya konumlarını, ses kayıtlarını ve fotoğraflarını cihazında tutan; ana parola ile şifrelenmiş çevrimdışı bir PWA prototipidir.
 
-## v0.3 özellikleri
+## v0.4 özellikleri
 - İlk açılışta ana parola ve kasa oluşturma ekranı
 - Ana parola üzerinden PBKDF2-SHA-256 (310.000 yineleme) ile anahtar türetme
 - Kayıt metaverilerinin AES-256-GCM ile şifrelenmesi
@@ -12,6 +12,8 @@ Bedrock, notlarını, eşya konumlarını, ses kayıtlarını ve fotoğrafların
 - Uygulama 5 dakikadan uzun süre arka planda kalırsa otomatik kilitleme
 - Ana parola değiştirme (eski biyometrik hızlı açma bu işlemde güvenlik nedeniyle kapatılır)
 - WebAuthn PRF desteği bulunan cihazlarda biyometrik/cihaz doğrulamasıyla hızlı açma
+- Telefon ekranları için yeniden düzenlenmiş mobil arayüz
+- Alt gezinme çubuğu, daha büyük dokunma alanları ve mobil alt sayfa (bottom-sheet) pencereleri
 - WebAuthn PRF desteği yoksa parola ile girişe geri dönüş
 
 ## Şifreleme tasarımı
@@ -50,3 +52,13 @@ Bilgisayarda `http://localhost:8000` adresini aç. `localhost`, geliştirme sır
 - Ses kaydı için MediaRecorder, mikrofon izni ve HTTPS gerekir. Kamera/galeri Android dosya seçicisini kullanır.
 - Ses kaydı en fazla 10 dakika, tek fotoğraf dosyası en fazla 18 MB olabilir.
 - Şifreli dışa aktarma/geri yükleme bu sürümde henüz yoktur.
+
+
+## v0.4 mobil arayüz notları
+- Dar ekranlarda iki sütunlu hızlı erişim kartları ve yatay kaydırılabilir kategori filtreleri kullanılır.
+- Alt gezinme çubuğu Ana sayfa, Ara, yeni not ve Ayarlar kısayollarını sunar.
+- Form pencereleri telefonlarda alt sayfa biçiminde açılır; güvenli alan (safe-area) boşlukları dikkate alınır.
+- Bu sürüm aynı IndexedDB veritabanı adını ve şemasını korur. Aynı alan adı ve tarayıcı profiliyle yükseltme yapıldığında mevcut kayıtların silinmesi beklenmez.
+
+## APK / Android uygulamasına dönüştürme
+Bedrock şu anda yüklenebilir bir PWA'dır: Android tarayıcısında ana ekrana eklenince tarayıcı çerçevesi olmadan ayrı bir uygulama penceresinde açılır. İstenirse sonraki aşamada bu PWA, Trusted Web Activity veya Capacitor kullanılarak Android APK/AAB biçiminde paketlenebilir. APK paketlemeden önce mobil arayüz ve gerçek cihaz testlerinin tamamlanması önerilir.

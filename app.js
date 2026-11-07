@@ -1103,11 +1103,21 @@ function initEvents() {
   document.getElementById('passwordCategory').addEventListener('click', () => {
     showToast('Özel parola kayıt formu bir sonraki aşamada eklenecek. Genel kayıtların şu anda şifreleniyor.');
   });
-  document.getElementById('settingsButton').addEventListener('click', () => {
+  const openSettings = () => {
     updateBiometricSettings();
     elements.settingsModal.hidden = false;
     document.body.classList.add('modal-open');
+  };
+  document.getElementById('settingsButton').addEventListener('click', openSettings);
+  document.getElementById('mobileNavHome').addEventListener('click', () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   });
+  document.getElementById('mobileNavSearch').addEventListener('click', () => {
+    document.getElementById('recordsHeading').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    window.setTimeout(() => elements.search.focus({ preventScroll: true }), 250);
+  });
+  document.getElementById('mobileNavAdd').addEventListener('click', () => openEditor(null, 'note'));
+  document.getElementById('mobileNavSettings').addEventListener('click', openSettings);
   document.querySelectorAll('.close-settings-modal').forEach(button => button.addEventListener('click', () => {
     elements.settingsModal.hidden = true;
     document.body.classList.remove('modal-open');
