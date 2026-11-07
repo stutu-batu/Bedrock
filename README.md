@@ -71,3 +71,10 @@ Ayrıntılı adımlar için `ANDROID-PACKAGING.md` dosyasına bak. TWA'nın tam 
 - `sw.js` — çevrimdışı uygulama kabuğu (v5 cache)
 - `manifest.webmanifest` — PWA/Android uygulama metaverisi
 - `icons/` — uygulama simgeleri
+
+
+## v0.5.1 düzeltmeleri
+
+- Mobil not formundaki Kaydet düğmesinin alt gezinme çubuğunun arkasında kalmasına neden olan katman sırası düzeltildi. Açık formlar artık mobil gezinme çubuğunun üzerinde görüntülenir.
+- Alt gezinme çubuğundaki ikinci Ayarlar düğmesi kaldırıldı. Ayarlar yalnızca üst çubuktaki dişli düğmesinden açılır.
+- Service Worker önbellek sürümü yenilendi; güncelleme yayımlandığında telefon yeni CSS ve JavaScript dosyalarını alır.

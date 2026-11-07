@@ -1588,7 +1588,6 @@ function initEvents() {
     window.setTimeout(() => elements.search.focus({ preventScroll: true }), 250);
   });
   document.getElementById('mobileNavAdd').addEventListener('click', () => openEditor(null, 'note'));
-  document.getElementById('mobileNavSettings').addEventListener('click', openSettings);
   document.querySelectorAll('.close-settings-modal').forEach(button => button.addEventListener('click', () => {
     elements.settingsModal.hidden = true;
     document.body.classList.remove('modal-open');

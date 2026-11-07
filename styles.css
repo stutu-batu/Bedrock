@@ -168,3 +168,12 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
 /* Backup dialogs must appear above both the settings sheet and first-run gate. */
 #backupExportModal,
 #backupImportModal{z-index:70}
+
+
+/* Bedrock v0.5.1 bug fix: keep dialogs above the mobile dock so form actions stay tappable. */
+.modal-backdrop{z-index:60}
+@media(max-width:720px){
+  .mobile-dock{grid-template-columns:1fr 1fr 1fr}
+  .modal-card{overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+  .modal-backdrop{z-index:60}
+}
