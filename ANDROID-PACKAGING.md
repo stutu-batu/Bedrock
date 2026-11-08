@@ -38,3 +38,7 @@ TWA, tamamen yerel bir Android arayüzü değildir; HTTPS üzerinde yayınlanan 
 Resmî açıklamalar:
 - PWABuilder Android paketleme: https://github.com/pwa-builder/PWABuilder/blob/main/docs/builder/other-android.md
 - Chrome TWA hızlı başlangıç: https://developer.chrome.com/docs/android/trusted-web-activity/quick-start
+
+## v0.7 hatırlatma bildirimi notu
+
+PWA Service Worker bildirim gösterebilir, ancak sayfa tamamen kapalıyken gelecekteki yerel bir alarmı kendi kendine başlatamaz. Uygulama kapalıyken kesin ve çevrimdışı alarm için Android yerel bildirim API'si kullanan bir paketleme katmanı veya native köprü gerekir. TWA tek başına bu yerel zamanlayıcıyı sağlamaz.

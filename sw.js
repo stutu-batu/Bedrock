@@ -1,5 +1,5 @@
 'use strict';
-const CACHE_NAME = 'bedrock-shell-v5-1';
+const CACHE_NAME = 'bedrock-shell-v7-0';
 const APP_SHELL = [
   './',
   './index.html',
@@ -53,4 +53,22 @@ self.addEventListener('fetch', event => {
       return response;
     }))
   );
+});
+
+
+self.addEventListener('notificationclick', event => {
+  const recordId = event.notification && event.notification.data && event.notification.data.recordId;
+  event.notification.close();
+  event.waitUntil((async () => {
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const client of windows) {
+      if ('focus' in client) {
+        await client.focus();
+        if (recordId && 'postMessage' in client) client.postMessage({ type: 'BEDROCK_OPEN_REMINDER', recordId });
+        return;
+      }
+    }
+    const target = recordId ? `./?reminder=${encodeURIComponent(recordId)}` : './';
+    await self.clients.openWindow(target);
+  })());
 });

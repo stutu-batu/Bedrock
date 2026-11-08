@@ -105,7 +105,7 @@
       <section class="records-section" aria-labelledby="recordsHeading">
         <div class="section-heading records-heading">
           <div><p class="eyebrow">KÜTÜPHANEN</p><h2 id="recordsHeading">Kayıtların</h2></div>
-          <span class="record-count" id="recordCount">0 KAYIT</span>
+          <div class="records-heading-actions"><button class="button-secondary empty-trash-button" id="emptyTrashButton" type="button" hidden>Çöp kutusunu boşalt</button><span class="record-count" id="recordCount">0 KAYIT</span></div>
         </div>
         <label class="search-box" for="searchInput">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 4.5 4.5"/></svg>
@@ -117,7 +117,44 @@
           <button class="filter-chip" data-category="note" type="button">Notlar</button>
           <button class="filter-chip" data-category="object" type="button">Eşya konumları</button>
           <button class="filter-chip" id="passwordCategory" data-category="password" type="button"><svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>Parolalar</button>
+          <button class="filter-chip" data-category="favorites" type="button">★ Favoriler <span id="favoriteCount">0</span></button>
+          <button class="filter-chip" data-category="trash" type="button">Çöp kutusu <span id="trashCount">0</span></button>
+          <button class="filter-chip" data-category="archive" type="button">Arşiv <span id="archiveCount">0</span></button>
         </div>
+        <details class="advanced-filter-details" id="advancedFilterDetails">
+          <summary><span>Filtrele ve sırala</span><span class="advanced-filter-summary" id="advancedFilterSummary">İsteğe bağlı</span></summary>
+          <div class="advanced-filter-grid">
+            <label class="filter-field">Son güncelleme
+              <select class="text-field select-field" id="dateFilter">
+                <option value="all">Tüm tarihler</option>
+                <option value="today">Bugün</option>
+                <option value="7days">Son 7 gün</option>
+                <option value="30days">Son 30 gün</option>
+                <option value="older">30 günden eski</option>
+              </select>
+            </label>
+            <label class="filter-field">Kayıt içeriği
+              <select class="text-field select-field" id="contentFilter">
+                <option value="all">Tüm içerikler</option>
+                <option value="text">Metin içeren</option>
+                <option value="photo">Fotoğraf içeren</option>
+                <option value="audio">Ses kaydı içeren</option>
+                <option value="media">Fotoğraf veya ses içeren</option>
+                <option value="password">Parola kayıtları</option>
+              </select>
+            </label>
+            <label class="filter-field">Sıralama
+              <select class="text-field select-field" id="sortFilter">
+                <option value="newest">En yeni</option>
+                <option value="oldest">En eski</option>
+                <option value="titleAsc">Başlık (A–Z)</option>
+                <option value="titleDesc">Başlık (Z–A)</option>
+              </select>
+            </label>
+            <button class="button-secondary clear-filters-button" id="clearAdvancedFilters" type="button">Filtreleri sıfırla</button>
+          </div>
+        </details>
+        <div class="tag-filter-row" id="tagFilterRow" aria-label="Etiket filtreleri" hidden></div>
         <div class="records-list" id="recordsList" aria-live="polite">
           <div class="empty-state" id="emptyState">
             <div class="empty-icon"><svg viewBox="0 0 24 24"><path d="M6 3.5h8l4 4V20H6z"/><path d="M14 3.5V8h4M9 12h6M9 16h6"/></svg></div>
@@ -164,6 +201,8 @@
       <input class="text-field" id="audioTitle" maxlength="100" placeholder="Örn. Aklıma gelen fikir">
       <label class="field-label" for="audioDescription">Açıklama (isteğe bağlı)</label>
       <textarea class="text-field text-area" id="audioDescription" rows="3" maxlength="5000" placeholder="Bu ses kaydı hakkında kısa bir not..."></textarea>
+        <label class="field-label" for="audioTags">Etiketler (virgülle ayır)</label>
+        <input class="text-field" id="audioTags" maxlength="350" placeholder="Örn. Fikir, İş, Hatırlatma">
       <div class="form-actions recorder-actions">
         <button class="button-secondary close-audio-modal" type="button">Vazgeç</button>
         <button class="button-secondary" id="startRecordingButton" type="button">● Kayda başla</button>
@@ -185,6 +224,8 @@
       <select class="text-field select-field" id="photoCategory"><option value="object">Eşya konumu</option><option value="note">Genel not</option></select>
       <label class="field-label" for="photoDescription">Konum / açıklama</label>
       <textarea class="text-field text-area" id="photoDescription" rows="3" maxlength="5000" placeholder="Örn. Antredeki üst dolabın mavi kutusu..."></textarea>
+      <label class="field-label" for="photoTags">Etiketler (virgülle ayır)</label>
+      <input class="text-field" id="photoTags" maxlength="350" placeholder="Örn. Ev, Depo, Elektronik">
       <div class="form-actions"><button class="button-secondary close-photo-modal" type="button">Vazgeç</button><button class="button-primary" id="savePhotoButton" type="button">Fotoğrafı kaydet ↗</button></div>
     </section>
   </div>
@@ -204,6 +245,14 @@
         </select>
         <label class="field-label" for="noteBody">Açıklama</label>
         <textarea class="text-field text-area" id="noteBody" name="body" rows="5" maxlength="10000" placeholder="Buraya hatırlamak istediğin bilgileri yaz..."></textarea>
+        <label class="field-label" for="noteTags">Etiketler (virgülle ayır)</label>
+        <input class="text-field" id="noteTags" maxlength="350" placeholder="Örn. Ev, Önemli, Elektronik">
+        <p class="field-hint">En fazla 12 etiket ekleyebilirsin.</p>
+        <div class="reminder-field-group">
+          <label class="field-label" for="noteReminderAt">⏰ Hatırlatma zamanı (isteğe bağlı)</label>
+          <input class="text-field" id="noteReminderAt" type="datetime-local" step="60">
+          <p class="field-hint">Seçtiğin zamanda Bedrock bildirim göstermeyi dener. Uygulama kapalıyken PWA bildirimleri garanti değildir.</p>
+        </div>
         <div class="form-actions"><button class="button-secondary close-modal" type="button">Vazgeç</button><button class="button-primary" id="saveNoteButton" type="submit">Kaydet <span>↗</span></button></div>
       </form>
     </section>
@@ -228,6 +277,8 @@
         <input class="text-field" id="passwordRecordWebsite" maxlength="500" inputmode="url" placeholder="https://...">
         <label class="field-label" for="passwordRecordNotes">Ek not (isteğe bağlı)</label>
         <textarea class="text-field text-area" id="passwordRecordNotes" rows="3" maxlength="5000" placeholder="Ek bilgiler..."></textarea>
+        <label class="field-label" for="passwordRecordTags">Etiketler (virgülle ayır)</label>
+        <input class="text-field" id="passwordRecordTags" maxlength="350" placeholder="Örn. Hesap, İş, Önemli">
         <div class="form-actions"><button class="button-secondary close-password-modal" type="button">Vazgeç</button><button class="button-primary" id="savePasswordRecordButton" type="submit">Şifreli kaydet ↗</button></div>
       </form>
     </section>
@@ -289,6 +340,10 @@
       <button class="button-secondary settings-action" id="enableBiometricButton" type="button">Biyometrik kilidi etkinleştir</button>
       <button class="button-secondary settings-action" id="disableBiometricButton" type="button" hidden>Biyometrik kilidi kapat</button>
       <button class="button-secondary settings-action" id="openChangePasswordButton" type="button">Ana parolayı değiştir</button>
+      <div class="settings-divider"></div>
+      <div class="security-status-row"><span class="security-status-icon">◷</span><div><strong>Hatırlatma bildirimleri</strong><p id="notificationsStatus">Bildirim izni henüz verilmedi.</p></div></div>
+      <button class="button-secondary settings-action" id="enableNotificationsButton" type="button">Hatırlatma bildirimlerini etkinleştir</button>
+      <p class="security-footnote">PWA hatırlatmaları uygulama açıkken veya tekrar açıldığında çalışır. Uygulama tamamen kapalıyken kesin saatli alarm için yerel Android bildirimi gerekir.</p>
       <div class="settings-divider"></div>
       <div class="security-status-row"><span class="security-status-icon">↧</span><div><strong>Şifreli yedekleme</strong><p>Notları, parolaları, fotoğrafları ve ses kayıtlarını tek dosyada koru.</p></div></div>
       <button class="button-secondary settings-action" id="exportBackupButton" type="button">Şifreli yedek oluştur</button>

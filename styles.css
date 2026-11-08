@@ -177,3 +177,65 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
   .modal-card{overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
   .modal-backdrop{z-index:60}
 }
+
+
+/* Bedrock v0.6 — secure tags, favorites and recoverable trash */
+.records-heading-actions{display:flex;align-items:center;gap:12px}
+.empty-trash-button{min-height:32px;padding:7px 10px;border-color:rgba(240,166,166,.25);color:#e5aaaa;font-size:9px}
+.empty-trash-button[hidden]{display:none}
+.tag-filter-row{display:flex;align-items:center;gap:7px;overflow-x:auto;margin:-4px 0 15px;padding:0 0 5px;scrollbar-width:none}
+.tag-filter-row::-webkit-scrollbar{display:none}
+.tag-filter-label{flex:none;color:#74818d;font-size:8px;font-weight:800;letter-spacing:.13em;margin-right:2px}
+.tag-filter-chip,.record-tag{flex:none;border:1px solid rgba(139,155,170,.2);border-radius:999px;background:rgba(139,155,170,.07);color:#a7b3bd;cursor:pointer}
+.tag-filter-chip{padding:6px 10px;font-size:9px}
+.tag-filter-chip.active,.record-tag.active{border-color:rgba(198,238,135,.4);background:rgba(198,238,135,.1);color:var(--accent)}
+.record-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.record-tag{padding:4px 8px;font-size:8px;line-height:1.2}
+.record-action.favorite-action{font-size:18px;line-height:1;color:#74818d}
+.record-action.favorite-action.is-favorite{color:#e8c96d}
+.record-action.permanent-delete-action{color:#e6a0a0}
+.record-action.restore-action{color:#b9d994}
+.record-card.is-trashed{border-style:dashed;opacity:.86}
+.field-hint{margin:6px 0 0;color:#74818d;font-size:9px;line-height:1.4}
+@media(max-width:720px){
+  .records-heading-actions{gap:8px}
+  .empty-trash-button{min-height:31px;padding:6px 8px;font-size:8px}
+  .tag-filter-row{margin:-2px -18px 13px;padding:0 18px 5px}
+  .tag-filter-label{font-size:7px}
+  .tag-filter-chip{padding:7px 10px;font-size:9px}
+  .record-tags{gap:4px;margin-top:7px}
+  .record-tag{padding:5px 8px;font-size:9px;min-height:25px}
+  .record-actions{flex-wrap:wrap;justify-content:flex-end}
+  .record-action.favorite-action{font-size:19px}
+}
+.tag-filter-row[hidden]{display:none!important}
+
+
+/* Bedrock v0.7 — advanced filters, archive and reminders */
+.advanced-filter-details{margin:0 0 14px;border:1px solid rgba(139,155,170,.16);border-radius:13px;background:rgba(30,38,48,.62);overflow:hidden}
+.advanced-filter-details>summary{min-height:42px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 13px;color:var(--soft);font-size:11px;font-weight:650;cursor:pointer;list-style:none}
+.advanced-filter-details>summary::-webkit-details-marker{display:none}
+.advanced-filter-details>summary::after{content:'⌄';color:var(--accent);font-size:15px}
+.advanced-filter-details[open]>summary::after{content:'⌃'}
+.advanced-filter-summary{margin-left:auto;color:var(--muted);font-size:9px;font-weight:500}
+.advanced-filter-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;padding:0 12px 12px}
+.filter-field{display:flex;flex-direction:column;gap:6px;color:var(--muted);font-size:9px;font-weight:650}
+.filter-field .text-field{width:100%;min-width:0;min-height:40px;padding:9px 10px;font-size:11px}
+.clear-filters-button{align-self:end;min-height:40px;padding:8px 12px;font-size:10px}
+.advanced-filter-details:not([open]) .advanced-filter-grid{display:none}
+.reminder-field-group{margin-top:15px;padding:12px;border:1px solid rgba(198,238,135,.16);border-radius:13px;background:rgba(198,238,135,.045)}
+.reminder-field-group .field-label{margin-top:0}
+.reminder-field-group input{width:100%;color-scheme:dark}
+.reminder-meta{color:#d7c58b}
+.record-action.archive-action{color:#b8c9d8}
+.record-card.is-archived{border-color:rgba(151,174,194,.24);background:linear-gradient(120deg,rgba(89,111,130,.075),rgba(25,31,39,.96))}
+@media(max-width:720px){
+  .advanced-filter-details{margin:0 -1px 12px;border-radius:12px}
+  .advanced-filter-details>summary{min-height:44px;padding:0 12px;font-size:11px}
+  .advanced-filter-grid{grid-template-columns:1fr 1fr;gap:9px;padding:0 10px 10px}
+  .filter-field{font-size:9px}
+  .filter-field .text-field{min-height:44px;font-size:12px}
+  .clear-filters-button{grid-column:1/-1;min-height:43px}
+  .reminder-field-group{padding:11px}
+  .reminder-field-group input{font-size:16px}
+}

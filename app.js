@@ -20,6 +20,21 @@ const elements = {
   list: document.getElementById('recordsList'),
   count: document.getElementById('recordCount'),
   allCount: document.getElementById('allCount'),
+  favoriteCount: document.getElementById('favoriteCount'),
+  trashCount: document.getElementById('trashCount'),
+  archiveCount: document.getElementById('archiveCount'),
+  dateFilter: document.getElementById('dateFilter'),
+  contentFilter: document.getElementById('contentFilter'),
+  sortFilter: document.getElementById('sortFilter'),
+  advancedFilterSummary: document.getElementById('advancedFilterSummary'),
+  clearAdvancedFilters: document.getElementById('clearAdvancedFilters'),
+  emptyTrash: document.getElementById('emptyTrashButton'),
+  tagFilters: document.getElementById('tagFilterRow'),
+  noteTags: document.getElementById('noteTags'),
+  noteReminder: document.getElementById('noteReminderAt'),
+  audioTags: document.getElementById('audioTags'),
+  photoTags: document.getElementById('photoTags'),
+  passwordTags: document.getElementById('passwordRecordTags'),
   search: document.getElementById('searchInput'),
   filters: document.getElementById('categoryFilters'),
   modal: document.getElementById('noteModal'),
@@ -60,6 +75,8 @@ const elements = {
   gateBiometric: document.getElementById('gateBiometricButton'),
   settingsModal: document.getElementById('settingsModal'),
   biometricStatus: document.getElementById('biometricStatus'),
+  notificationsStatus: document.getElementById('notificationsStatus'),
+  enableNotifications: document.getElementById('enableNotificationsButton'),
   enableBiometric: document.getElementById('enableBiometricButton'),
   disableBiometric: document.getElementById('disableBiometricButton'),
   lockNow: document.getElementById('lockNowButton'),
@@ -101,6 +118,7 @@ const elements = {
 let database;
 let records = [];
 let activeCategory = 'all';
+let activeTagFilter = '';
 let editingId = null;
 let toastTimeout;
 let activeObjectUrls = [];
@@ -121,6 +139,9 @@ let pageHiddenAt = 0;
 let activePasswordRecordId = null;
 let pendingBackupFile = null;
 let searchDebounceTimer = null;
+let reminderTimer = null;
+let reminderDispatchRunning = false;
+let pendingReminderRecordId = null;
 
 function openDatabase() {
   return new Promise((resolve, reject) => {
@@ -164,6 +185,29 @@ function storeRequest(mode, operation) {
   });
 }
 
+async function persistEncryptedRecord(record) {
+  const existingEnvelope = await storeRequest('readonly', store => store.get(record.id));
+  const encryptedRecord = await encryptRecord(record, vaultCryptoKey, existingEnvelope || null);
+  await storeRequest('readwrite', store => store.put(encryptedRecord));
+}
+
+function upsertRecordInMemory(record) {
+  const index = records.findIndex(item => item.id === record.id);
+  if (index >= 0) records[index] = record;
+  else records.push(record);
+  records.sort((a, b) => b.updatedAt - a.updatedAt);
+  renderRecords();
+  scheduleNextReminder();
+  if (!document.hidden) window.setTimeout(processDueReminders, 250);
+}
+
+function removeRecordsInMemory(ids) {
+  const removed = new Set(ids);
+  records = records.filter(record => !removed.has(record.id));
+  renderRecords();
+  scheduleNextReminder();
+}
+
 async function loadRecords() {
   if (!vaultCryptoKey) throw new Error('Kasa kilitli.');
   const stored = await storeRequest('readonly', store => store.getAll());
@@ -177,6 +221,9 @@ async function loadRecords() {
   records = decrypted;
   records.sort((a, b) => b.updatedAt - a.updatedAt);
   renderRecords();
+  // Rebuild local reminder timers after every vault unlock / app reload.
+  // The scheduler is page-bound; it is not an OS alarm while the PWA is closed.
+  scheduleNextReminder();
 }
 
 function getMeta(key) {
@@ -246,7 +293,48 @@ async function decryptBytes(envelope, key, additionalData) {
   );
 }
 
-async function encryptRecord(record, key) {
+function normalizeTags(value) {
+  const source = Array.isArray(value) ? value : (typeof value === 'string' ? value.split(/[,;\n]/) : []);
+  const result = [];
+  const seen = new Set();
+  for (const raw of source) {
+    const tag = String(raw || '').trim().replace(/^#+/, '').trim().replace(/\s+/g, ' ').slice(0, 24);
+    const key = tag.toLocaleLowerCase('tr-TR');
+    if (!tag || seen.has(key)) continue;
+    seen.add(key);
+    result.push(tag);
+    if (result.length >= 12) break;
+  }
+  return result;
+}
+
+function parseTagsInput(value) {
+  return normalizeTags(String(value || '').split(/[,;\n]/));
+}
+
+function tagsToInput(tags) {
+  return normalizeTags(tags).join(', ');
+}
+
+function toDateTimeLocal(timestamp) {
+  if (!Number.isFinite(timestamp)) return '';
+  const localDate = new Date(timestamp - new Date(timestamp).getTimezoneOffset() * 60000);
+  return localDate.toISOString().slice(0, 16);
+}
+
+function parseReminderInput(value) {
+  if (!value) return null;
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function formatReminderDate(timestamp) {
+  return new Intl.DateTimeFormat('tr-TR', {
+    day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+  }).format(new Date(timestamp));
+}
+
+async function encryptRecord(record, key, existingEnvelope = null) {
   const metadata = {
     title: record.title,
     body: record.body,
@@ -257,11 +345,23 @@ async function encryptRecord(record, key) {
       website: record.credential && record.credential.website ? record.credential.website : ''
     } : null,
     createdAt: record.createdAt,
-    updatedAt: record.updatedAt
+    updatedAt: record.updatedAt,
+    tags: normalizeTags(record.tags),
+    favorite: Boolean(record.favorite),
+    deletedAt: Number.isFinite(record.deletedAt) ? record.deletedAt : null,
+    archivedAt: Number.isFinite(record.archivedAt) ? record.archivedAt : null,
+    reminderAt: Number.isFinite(record.reminderAt) ? record.reminderAt : null,
+    reminderNotifiedAt: Number.isFinite(record.reminderNotifiedAt) ? record.reminderNotifiedAt : null
   };
   const encryptedMetadata = await encryptBytes(encoder.encode(JSON.stringify(metadata)), key, `bedrock-record:${record.id}:meta`);
   const attachments = [];
+  const reusableAttachments = new Map((existingEnvelope && Array.isArray(existingEnvelope.attachments) ? existingEnvelope.attachments : []).map(item => [item.id, item]));
   for (const attachment of (record.attachments || [])) {
+    const previous = reusableAttachments.get(attachment.id);
+    if (previous && previous.kind === attachment.kind && previous.name === attachment.name && previous.mimeType === attachment.mimeType) {
+      attachments.push(previous);
+      continue;
+    }
     const blob = attachment.blob instanceof Blob ? attachment.blob : new Blob([attachment.blob || new ArrayBuffer(0)], { type: attachment.mimeType || '' });
     const cipher = await encryptBytes(await blob.arrayBuffer(), key, `bedrock-record:${record.id}:attachment:${attachment.id}`);
     attachments.push({
@@ -289,6 +389,13 @@ async function decryptRecord(envelope, key) {
   }
   const metadataBytes = await decryptBytes({ iv: envelope.metaIv, cipher: envelope.metaCipher }, key, `bedrock-record:${envelope.id}:meta`);
   const metadata = JSON.parse(decoder.decode(metadataBytes));
+  // v0.7 adds encrypted archive and reminder metadata. Older records receive safe defaults.
+  metadata.tags = normalizeTags(metadata.tags);
+  metadata.favorite = Boolean(metadata.favorite);
+  metadata.deletedAt = Number.isFinite(metadata.deletedAt) ? metadata.deletedAt : null;
+  metadata.archivedAt = Number.isFinite(metadata.archivedAt) ? metadata.archivedAt : null;
+  metadata.reminderAt = Number.isFinite(metadata.reminderAt) ? metadata.reminderAt : null;
+  metadata.reminderNotifiedAt = Number.isFinite(metadata.reminderNotifiedAt) ? metadata.reminderNotifiedAt : null;
   const attachments = [];
   for (const item of (envelope.attachments || [])) {
     const bytes = await decryptBytes({ iv: item.iv, cipher: item.cipher }, key, `bedrock-record:${envelope.id}:attachment:${item.id}`);
@@ -387,6 +494,8 @@ async function unlockWithPassword(password) {
   elements.gatePassword.value = '';
   elements.gateConfirm.value = '';
   updateBiometricSettings();
+  updateNotificationSettings();
+  openPendingReminderRecord();
 }
 
 async function setupVault(password) {
@@ -401,6 +510,7 @@ async function setupVault(password) {
     document.body.classList.remove('vault-locked');
     elements.gate.hidden = true;
     updateBiometricSettings();
+    updateNotificationSettings();
     showToast('Bedrock kasan şifrelendi ve hazır.');
   } finally {
     rawKey.fill(0);
@@ -529,6 +639,8 @@ async function unlockWithBiometric() {
       elements.gate.hidden = true;
       elements.gateError.textContent = '';
       updateBiometricSettings();
+      updateNotificationSettings();
+      openPendingReminderRecord();
     } finally {
       prfOutput.fill(0);
     }
@@ -571,10 +683,16 @@ async function changeMasterPassword(event) {
 }
 
 function clearUnlockedSession() {
+  window.clearTimeout(reminderTimer);
+  reminderTimer = null;
   vaultCryptoKey = null;
   records = [];
   releaseRenderedObjectUrls();
   elements.search.value = '';
+  elements.dateFilter.value = 'all';
+  elements.contentFilter.value = 'all';
+  elements.sortFilter.value = 'newest';
+  activeTagFilter = '';
   activeCategory = 'all';
   updateFilterButtons();
   elements.list.replaceChildren();
@@ -687,9 +805,44 @@ function createAttachmentView(attachment) {
   return wrapper;
 }
 
+function activateTagFilter(tag) {
+  activeTagFilter = activeTagFilter.toLocaleLowerCase('tr-TR') === String(tag).toLocaleLowerCase('tr-TR') ? '' : String(tag);
+  renderRecords();
+}
+
+function createTagChip(tag, isFilter = false) {
+  const chip = document.createElement('button');
+  chip.type = 'button';
+  chip.className = isFilter ? 'tag-filter-chip' : 'record-tag';
+  chip.textContent = `#${tag}`;
+  chip.dataset.tagFilter = tag;
+  chip.setAttribute('aria-pressed', String(activeTagFilter.toLocaleLowerCase('tr-TR') === tag.toLocaleLowerCase('tr-TR')));
+  if (activeTagFilter.toLocaleLowerCase('tr-TR') === tag.toLocaleLowerCase('tr-TR')) chip.classList.add('active');
+  if (!isFilter) chip.addEventListener('click', () => activateTagFilter(tag));
+  return chip;
+}
+
+function createRecordAction(label, title, glyph, onClick, extraClass = '') {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = `record-action ${extraClass}`.trim();
+  button.setAttribute('aria-label', label);
+  button.title = title;
+  if (glyph === 'favorite') {
+    button.textContent = '★';
+  } else {
+    button.innerHTML = glyph;
+  }
+  button.addEventListener('click', onClick);
+  return button;
+}
+
 function createRecordCard(record) {
   const card = document.createElement('article');
-  card.className = 'record-card';
+  const isTrashed = Boolean(record.deletedAt);
+  const isArchived = Boolean(record.archivedAt) && !isTrashed;
+  card.className = `record-card${isTrashed ? ' is-trashed' : ''}${isArchived ? ' is-archived' : ''}`;
+  card.dataset.recordId = record.id;
 
   const symbol = document.createElement('div');
   symbol.className = 'record-symbol';
@@ -714,6 +867,24 @@ function createRecordCard(record) {
   const date = document.createElement('span');
   date.textContent = formatDate(record.updatedAt);
   meta.append(category, dot, date);
+
+  if (isTrashed || isArchived) {
+    const statusDot = document.createElement('span');
+    statusDot.className = 'meta-dot';
+    const statusLabel = document.createElement('span');
+    statusLabel.textContent = isTrashed ? `Çöp kutusu · ${formatDate(record.deletedAt)}` : `Arşiv · ${formatDate(record.archivedAt)}`;
+    meta.append(statusDot, statusLabel);
+  }
+  if (record.reminderAt && !isTrashed && !isArchived) {
+    const reminderDot = document.createElement('span');
+    reminderDot.className = 'meta-dot';
+    const reminderLabel = document.createElement('span');
+    reminderLabel.className = 'reminder-meta';
+    const isDue = record.reminderAt <= Date.now();
+    reminderLabel.textContent = `${record.reminderNotifiedAt ? '✓ Hatırlatıldı' : isDue ? '⏰ Hatırlatma zamanı' : '◷ Hatırlatma'} · ${formatReminderDate(record.reminderAt)}`;
+    meta.append(reminderDot, reminderLabel);
+  }
+
   const attachments = Array.isArray(record.attachments) ? record.attachments : [];
   if (attachments.length) {
     const mediaDot = document.createElement('span');
@@ -726,6 +897,14 @@ function createRecordCard(record) {
   }
   main.append(title, preview, meta);
 
+  const tags = normalizeTags(record.tags);
+  if (tags.length) {
+    const tagWrap = document.createElement('div');
+    tagWrap.className = 'record-tags';
+    for (const tag of tags) tagWrap.append(createTagChip(tag));
+    main.append(tagWrap);
+  }
+
   if (attachments.length) {
     const media = document.createElement('div');
     media.className = 'record-attachments';
@@ -735,51 +914,181 @@ function createRecordCard(record) {
 
   const actions = document.createElement('div');
   actions.className = 'record-actions';
-  const editButton = document.createElement('button');
-  editButton.type = 'button';
-  editButton.className = 'record-action';
-  editButton.setAttribute('aria-label', `${record.title} kaydını düzenle`);
-  editButton.title = 'Düzenle';
-  editButton.innerHTML = '<svg viewBox="0 0 24 24"><path d="m14 5 5 5M4 20l4.5-1 10.8-10.8a2.1 2.1 0 0 0-3-3L5.5 16 4 20Z"/></svg>';
-  editButton.addEventListener('click', () => record.category === 'password' ? openPasswordEditor(record) : openEditor(record));
-  const deleteButton = document.createElement('button');
-  deleteButton.type = 'button';
-  deleteButton.className = 'record-action';
-  deleteButton.setAttribute('aria-label', `${record.title} kaydını sil`);
-  deleteButton.title = 'Sil';
-  deleteButton.innerHTML = '<svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5"/></svg>';
-  deleteButton.addEventListener('click', () => deleteRecord(record));
-  if (record.category === 'password') {
-    const viewButton = document.createElement('button');
-    viewButton.type = 'button';
-    viewButton.className = 'record-action';
-    viewButton.setAttribute('aria-label', `${record.title} giriş bilgilerini görüntüle`);
-    viewButton.title = 'Giriş bilgilerini görüntüle';
-    viewButton.innerHTML = '<svg viewBox="0 0 24 24"><path d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.5"/></svg>';
-    viewButton.addEventListener('click', () => openPasswordDetails(record));
+
+  if (record.category === 'password' && !isTrashed) {
+    const viewButton = createRecordAction(
+      `${record.title} giriş bilgilerini görüntüle`,
+      'Giriş bilgilerini görüntüle',
+      '<svg viewBox="0 0 24 24"><path d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.5"/></svg>',
+      () => openPasswordDetails(record)
+    );
     actions.append(viewButton);
   }
-  actions.append(editButton, deleteButton);
+
+  if (isTrashed) {
+    const restoreButton = createRecordAction(
+      `${record.title} kaydını geri yükle`,
+      'Geri yükle',
+      '<svg viewBox="0 0 24 24"><path d="M4 11a8 8 0 1 1 2.2 5.5M4 5v6h6"/><path d="M12 8v4l2.5 1.5"/></svg>',
+      () => restoreRecord(record), 'restore-action'
+    );
+    const permanentButton = createRecordAction(
+      `${record.title} kaydını kalıcı sil`,
+      'Kalıcı sil',
+      '<svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5"/></svg>',
+      () => permanentlyDeleteRecord(record), 'permanent-delete-action'
+    );
+    actions.append(restoreButton, permanentButton);
+  } else if (isArchived) {
+    const unarchiveButton = createRecordAction(
+      `${record.title} kaydını arşivden çıkar`, 'Arşivden çıkar',
+      '<svg viewBox="0 0 24 24"><path d="M4 7h16v13H4zM3 4h18v3H3zM9 12h6"/></svg>',
+      () => unarchiveRecord(record), 'restore-action'
+    );
+    const deleteButton = createRecordAction(
+      `${record.title} kaydını çöp kutusuna taşı`, 'Çöp kutusuna taşı',
+      '<svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5"/></svg>',
+      () => deleteRecord(record)
+    );
+    actions.append(unarchiveButton, deleteButton);
+  } else {
+    const favoriteButton = createRecordAction(
+      record.favorite ? `${record.title} favorilerden çıkar` : `${record.title} favorilere ekle`,
+      record.favorite ? 'Favorilerden çıkar' : 'Favorilere ekle',
+      'favorite', () => toggleFavorite(record),
+      `favorite-action${record.favorite ? ' is-favorite' : ''}`
+    );
+    const editButton = createRecordAction(
+      `${record.title} kaydını düzenle`, 'Düzenle',
+      '<svg viewBox="0 0 24 24"><path d="m14 5 5 5M4 20l4.5-1 10.8-10.8a2.1 2.1 0 0 0-3-3L5.5 16 4 20Z"/></svg>',
+      () => record.category === 'password' ? openPasswordEditor(record) : openEditor(record)
+    );
+    const archiveButton = createRecordAction(
+      `${record.title} kaydını arşivle`, 'Arşivle',
+      '<svg viewBox="0 0 24 24"><path d="M4 7h16v13H4zM3 4h18v3H3zM9 12h6"/></svg>',
+      () => archiveRecord(record), 'archive-action'
+    );
+    const deleteButton = createRecordAction(
+      `${record.title} kaydını çöp kutusuna taşı`, 'Çöp kutusuna taşı',
+      '<svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5"/></svg>',
+      () => deleteRecord(record)
+    );
+    actions.append(favoriteButton, editButton, archiveButton, deleteButton);
+  }
 
   card.append(symbol, main, actions);
   return card;
 }
 
+function renderTagFilters(scopeRecords) {
+  const unique = new Map();
+  for (const record of scopeRecords) {
+    for (const tag of normalizeTags(record.tags)) {
+      const key = tag.toLocaleLowerCase('tr-TR');
+      if (!unique.has(key)) unique.set(key, tag);
+    }
+  }
+  const tags = [...unique.values()].sort((a, b) => a.localeCompare(b, 'tr-TR')).slice(0, 24);
+  elements.tagFilters.replaceChildren();
+  elements.tagFilters.hidden = tags.length === 0;
+  if (!tags.length) return;
+  const label = document.createElement('span');
+  label.className = 'tag-filter-label';
+  label.textContent = 'ETİKETLER';
+  elements.tagFilters.append(label);
+  const allButton = document.createElement('button');
+  allButton.type = 'button';
+  allButton.className = `tag-filter-chip${activeTagFilter ? '' : ' active'}`;
+  allButton.textContent = 'Tümü';
+  allButton.setAttribute('aria-pressed', String(!activeTagFilter));
+  allButton.addEventListener('click', () => { activeTagFilter = ''; renderRecords(); });
+  elements.tagFilters.append(allButton);
+  for (const tag of tags) elements.tagFilters.append(createTagChip(tag, true));
+}
+
+function recordMatchesContentFilter(record, filter) {
+  const attachments = Array.isArray(record.attachments) ? record.attachments : [];
+  const hasImage = attachments.some(item => item.kind === 'image');
+  const hasAudio = attachments.some(item => item.kind === 'audio');
+  if (filter === 'text') return record.category !== 'password' && Boolean(String(record.body || '').trim());
+  if (filter === 'photo') return hasImage;
+  if (filter === 'audio') return hasAudio;
+  if (filter === 'media') return hasImage || hasAudio;
+  if (filter === 'password') return record.category === 'password';
+  return true;
+}
+
+function recordMatchesDateFilter(record, filter, now = Date.now()) {
+  if (filter === 'all') return true;
+  const timestamp = Number(record.updatedAt) || Number(record.createdAt) || 0;
+  const age = now - timestamp;
+  if (filter === 'today') {
+    const date = new Date(timestamp);
+    const today = new Date(now);
+    return date.getFullYear() === today.getFullYear() && date.getMonth() === today.getMonth() && date.getDate() === today.getDate();
+  }
+  if (filter === '7days') return age >= 0 && age <= 7 * 24 * 60 * 60 * 1000;
+  if (filter === '30days') return age >= 0 && age <= 30 * 24 * 60 * 60 * 1000;
+  if (filter === 'older') return age > 30 * 24 * 60 * 60 * 1000;
+  return true;
+}
+
+function updateAdvancedFilterSummary() {
+  const count = [elements.dateFilter.value !== 'all', elements.contentFilter.value !== 'all', elements.sortFilter.value !== 'newest'].filter(Boolean).length;
+  elements.advancedFilterSummary.textContent = count ? `${count} etkin filtre` : 'İsteğe bağlı';
+}
+
 function renderRecords() {
   releaseRenderedObjectUrls();
   const query = escapeSearch(elements.search.value);
-  const filtered = records.filter(record => {
-    const matchesCategory = activeCategory === 'all' || record.category === activeCategory;
+  const showingTrash = activeCategory === 'trash';
+  const showingArchive = activeCategory === 'archive';
+  const scopeRecords = records.filter(record => {
+    if (showingTrash) return Boolean(record.deletedAt);
+    if (record.deletedAt) return false;
+    if (showingArchive) return Boolean(record.archivedAt);
+    return !record.archivedAt;
+  });
+  renderTagFilters(scopeRecords);
+
+  const now = Date.now();
+  const filtered = scopeRecords.filter(record => {
+    let matchesView = true;
+    if (activeCategory === 'favorites') matchesView = Boolean(record.favorite) && !record.archivedAt;
+    else if (activeCategory !== 'all' && activeCategory !== 'trash' && activeCategory !== 'archive') matchesView = record.category === activeCategory;
     const attachmentNames = (record.attachments || []).map(item => item.name || '').join(' ');
     const credentialText = record.category === 'password'
       ? `${record.credential && record.credential.username || ''} ${record.credential && record.credential.website || ''}`
       : '';
-    const searchable = escapeSearch(`${record.title} ${record.body} ${credentialText} ${categoryName(record.category)} ${attachmentNames}`);
-    return matchesCategory && (!query || searchable.includes(query));
+    const searchable = escapeSearch(`${record.title} ${record.body} ${credentialText} ${categoryName(record.category)} ${attachmentNames} ${normalizeTags(record.tags).join(' ')}`);
+    const matchesTag = !activeTagFilter || normalizeTags(record.tags).some(tag => tag.toLocaleLowerCase('tr-TR') === activeTagFilter.toLocaleLowerCase('tr-TR'));
+    const matchesContent = recordMatchesContentFilter(record, elements.contentFilter.value);
+    const matchesDate = recordMatchesDateFilter(record, elements.dateFilter.value, now);
+    return matchesView && matchesTag && matchesContent && matchesDate && (!query || searchable.includes(query));
   });
 
-  elements.count.textContent = `${records.length} KAYIT`;
-  elements.allCount.textContent = String(records.length);
+  const activeRecords = records.filter(record => !record.deletedAt && !record.archivedAt);
+  const favoriteRecords = activeRecords.filter(record => record.favorite);
+  const trashRecords = records.filter(record => Boolean(record.deletedAt));
+  const archiveRecords = records.filter(record => !record.deletedAt && Boolean(record.archivedAt));
+  elements.count.textContent = `${filtered.length} KAYIT`;
+  elements.allCount.textContent = String(activeRecords.length);
+  elements.favoriteCount.textContent = String(favoriteRecords.length);
+  elements.trashCount.textContent = String(trashRecords.length);
+  elements.archiveCount.textContent = String(archiveRecords.length);
+  elements.emptyTrash.hidden = !showingTrash || trashRecords.length === 0;
+  updateAdvancedFilterSummary();
+
+  if (elements.sortFilter.value === 'oldest') filtered.sort((a, b) => (a.updatedAt || 0) - (b.updatedAt || 0));
+  else if (elements.sortFilter.value === 'titleAsc') filtered.sort((a, b) => String(a.title).localeCompare(String(b.title), 'tr-TR'));
+  else if (elements.sortFilter.value === 'titleDesc') filtered.sort((a, b) => String(b.title).localeCompare(String(a.title), 'tr-TR'));
+  else filtered.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+
+  const heading = document.getElementById('recordsHeading');
+  heading.textContent = activeCategory === 'favorites' ? 'Favorilerin'
+    : showingTrash ? 'Çöp kutusu'
+    : showingArchive ? 'Arşiv'
+    : activeCategory === 'all' ? 'Kayıtların' : categoryName(activeCategory);
   elements.list.replaceChildren();
 
   if (filtered.length === 0) {
@@ -787,29 +1096,34 @@ function renderRecords() {
     empty.className = 'empty-state';
     const icon = document.createElement('div');
     icon.className = 'empty-icon';
-    icon.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 3.5h8l4 4V20H6z"/><path d="M14 3.5V8h4M9 12h6M9 16h6"/></svg>';
-    const heading = document.createElement('h3');
+    icon.innerHTML = showingTrash
+      ? '<svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7"/></svg>'
+      : showingArchive
+        ? '<svg viewBox="0 0 24 24"><path d="M4 7h16v13H4zM3 4h18v3H3zM9 12h6"/></svg>'
+        : '<svg viewBox="0 0 24 24"><path d="M6 3.5h8l4 4V20H6z"/><path d="M14 3.5V8h4M9 12h6M9 16h6"/></svg>';
+    const headingText = document.createElement('h3');
     const paragraph = document.createElement('p');
     const button = document.createElement('button');
     button.className = 'text-action';
     button.type = 'button';
-    if (query || activeCategory !== 'all') {
-      heading.textContent = 'Burada henüz bir kayıt yok';
-      paragraph.textContent = 'Aramanı veya seçtiğin kategoriyi değiştirebilirsin.';
-      button.textContent = 'Tüm kayıtları göster';
-      button.addEventListener('click', () => {
-        activeCategory = 'all';
-        elements.search.value = '';
-        updateFilterButtons();
-        renderRecords();
-      });
+    const anyAdvanced = query || activeTagFilter || elements.dateFilter.value !== 'all' || elements.contentFilter.value !== 'all' || elements.sortFilter.value !== 'newest';
+    if (anyAdvanced || (activeCategory !== 'all' && activeCategory !== 'trash' && activeCategory !== 'archive' && activeCategory !== 'favorites') || activeCategory === 'favorites') {
+      headingText.textContent = activeCategory === 'favorites' && !favoriteRecords.length ? 'Henüz favorin yok' : 'Burada henüz bir kayıt yok';
+      paragraph.textContent = activeCategory === 'favorites' && !favoriteRecords.length ? 'Beğendiğin kayıtların yanındaki yıldız simgesine dokun.' : 'Aramanı veya seçtiğin filtreleri değiştirebilirsin.';
+      button.textContent = 'Filtreleri sıfırla';
+      button.addEventListener('click', clearAllFilters);
+    } else if (showingTrash || showingArchive) {
+      headingText.textContent = showingTrash ? 'Çöp kutun boş' : 'Arşivin boş';
+      paragraph.textContent = showingTrash ? 'Sildiğin kayıtlar burada görünür. İstersen daha sonra geri yükleyebilirsin.' : 'Arşivlediğin kayıtlar burada görünür. İstediğinde tekrar kayıtlarına alabilirsin.';
+      button.textContent = 'Kayıtlarıma dön';
+      button.addEventListener('click', () => { activeCategory = 'all'; activeTagFilter = ''; updateFilterButtons(); renderRecords(); });
     } else {
-      heading.textContent = 'Henüz bir kaydın yok';
+      headingText.textContent = 'Henüz bir kaydın yok';
       paragraph.textContent = 'İlk notunu ekleyerek Bedrock’u doldurmaya başla.';
       button.textContent = 'İlk kaydını oluştur ↗';
       button.addEventListener('click', () => openEditor());
     }
-    empty.append(icon, heading, paragraph, button);
+    empty.append(icon, headingText, paragraph, button);
     elements.list.append(empty);
     return;
   }
@@ -817,6 +1131,17 @@ function renderRecords() {
   const fragment = document.createDocumentFragment();
   for (const record of filtered) fragment.append(createRecordCard(record));
   elements.list.append(fragment);
+}
+
+function clearAllFilters() {
+  activeCategory = 'all';
+  activeTagFilter = '';
+  elements.search.value = '';
+  elements.dateFilter.value = 'all';
+  elements.contentFilter.value = 'all';
+  elements.sortFilter.value = 'newest';
+  updateFilterButtons();
+  renderRecords();
 }
 
 function updateFilterButtons() {
@@ -841,6 +1166,8 @@ function openEditor(record = null, forcedCategory = null) {
   elements.title.value = record ? record.title : '';
   elements.category.value = record ? record.category : (forcedCategory || 'note');
   elements.body.value = record ? record.body : '';
+  elements.noteTags.value = tagsToInput(record ? record.tags : []);
+  elements.noteReminder.value = record && record.reminderAt ? toDateTimeLocal(record.reminderAt) : '';
   elements.modal.hidden = false;
   document.body.classList.add('modal-open');
   window.setTimeout(() => elements.title.focus(), 40);
@@ -860,6 +1187,7 @@ function openPasswordEditor(record = null) {
   elements.passwordValue.value = record && record.credential ? record.credential.password || '' : '';
   elements.passwordWebsite.value = record && record.credential ? record.credential.website || '' : '';
   elements.passwordNotes.value = record ? record.body || '' : '';
+  elements.passwordTags.value = tagsToInput(record ? record.tags : []);
   elements.passwordModal.querySelector('h2').textContent = record ? 'Parola kaydını düzenle.' : 'Giriş bilgilerini sakla.';
   elements.togglePasswordValue.textContent = 'Göster';
   elements.passwordValue.type = 'password';
@@ -950,15 +1278,20 @@ async function savePasswordRecord(event) {
     body: elements.passwordNotes.value.trim(),
     category: 'password',
     credential,
+    tags: parseTagsInput(elements.passwordTags.value),
+    favorite: existing ? Boolean(existing.favorite) : false,
+    deletedAt: existing ? (existing.deletedAt || null) : null,
+    archivedAt: existing ? (existing.archivedAt || null) : null,
+    reminderAt: existing ? (existing.reminderAt || null) : null,
+    reminderNotifiedAt: existing ? (existing.reminderNotifiedAt || null) : null,
     attachments: existing && Array.isArray(existing.attachments) ? existing.attachments : [],
     createdAt: existing ? existing.createdAt : now,
     updatedAt: now
   };
   elements.savePassword.disabled = true;
   try {
-    const encryptedRecord = await encryptRecord(record, vaultCryptoKey);
-    await storeRequest('readwrite', store => store.put(encryptedRecord));
-    await loadRecords();
+    await persistEncryptedRecord(record);
+    upsertRecordInMemory(record);
     closePasswordEditor();
     showToast(existing ? 'Parola kaydı güncellendi.' : 'Parola kaydı şifreli olarak eklendi.');
   } catch (error) {
@@ -1211,25 +1544,43 @@ async function saveRecord(event) {
     return;
   }
 
-  elements.saveButton.disabled = true;
   const now = Date.now();
   const existing = editingId ? records.find(item => item.id === editingId) : null;
+  const reminderAt = parseReminderInput(elements.noteReminder.value);
+  if (elements.noteReminder.value && !reminderAt) {
+    showToast('Hatırlatma tarihi okunamadı.');
+    return;
+  }
+  if (reminderAt && reminderAt <= now && !(existing && existing.reminderAt === reminderAt)) {
+    showToast('Hatırlatma zamanı gelecekte olmalı.');
+    return;
+  }
+
+  elements.saveButton.disabled = true;
   const record = {
     id: editingId || makeId(),
     title,
     body,
     category: category === 'object' ? 'object' : 'note',
+    tags: parseTagsInput(elements.noteTags.value),
+    favorite: existing ? Boolean(existing.favorite) : false,
+    deletedAt: existing ? (existing.deletedAt || null) : null,
+    archivedAt: existing ? (existing.archivedAt || null) : null,
+    reminderAt,
+    reminderNotifiedAt: existing && existing.reminderAt === reminderAt ? (existing.reminderNotifiedAt || null) : null,
     attachments: existing && Array.isArray(existing.attachments) ? existing.attachments : [],
     createdAt: existing ? existing.createdAt : now,
     updatedAt: now
   };
 
   try {
-    const encryptedRecord = await encryptRecord(record, vaultCryptoKey);
-    await storeRequest('readwrite', store => store.put(encryptedRecord));
-    await loadRecords();
+    await persistEncryptedRecord(record);
+    upsertRecordInMemory(record);
     closeEditor();
     showToast(existing ? 'Kayıt güncellendi.' : 'Kayıt Bedrock’a eklendi.');
+    if (reminderAt && 'Notification' in window && Notification.permission === 'default') {
+      showToast('Hatırlatma kaydedildi. Bildirim iznini Ayarlar’dan açabilirsin.');
+    }
   } catch (error) {
     showToast(storageErrorMessage(error));
   } finally {
@@ -1237,16 +1588,18 @@ async function saveRecord(event) {
   }
 }
 
-async function saveMediaRecord({ title, body, category, attachment }) {
+async function saveMediaRecord({ title, body, category, attachment, tags = [] }) {
   const now = Date.now();
   const record = {
     id: makeId(), title: title.trim(), body: body.trim(),
     category: category === 'object' ? 'object' : 'note',
+    tags: normalizeTags(tags), favorite: false, deletedAt: null, archivedAt: null,
+    reminderAt: null, reminderNotifiedAt: null,
     attachments: [attachment], createdAt: now, updatedAt: now
   };
   const encryptedRecord = await encryptRecord(record, vaultCryptoKey);
   await storeRequest('readwrite', store => store.put(encryptedRecord));
-  await loadRecords();
+  upsertRecordInMemory(record);
 }
 
 function storageErrorMessage(error) {
@@ -1256,13 +1609,88 @@ function storageErrorMessage(error) {
   return error && error.message ? error.message : 'Kayıt kaydedilemedi.';
 }
 
+async function toggleFavorite(record) {
+  try {
+    const updated = { ...record, favorite: !record.favorite, updatedAt: Date.now() };
+    await persistEncryptedRecord(updated);
+    upsertRecordInMemory(updated);
+    showToast(updated.favorite ? 'Favorilere eklendi.' : 'Favorilerden çıkarıldı.');
+  } catch (error) {
+    showToast(storageErrorMessage(error));
+  }
+}
+
 async function deleteRecord(record) {
-  const confirmed = window.confirm(`“${record.title}” kaydı silinsin mi? Ekli fotoğraf ve sesler de silinir. Bu işlem geri alınamaz.`);
+  const confirmed = window.confirm(`“${record.title}” kaydı çöp kutusuna taşınsın mı? Kayıt ve ekleri geri yükleyebilmen için saklanacak.`);
+  if (!confirmed) return;
+  try {
+    const now = Date.now();
+    const updated = { ...record, deletedAt: now, updatedAt: now };
+    await persistEncryptedRecord(updated);
+    upsertRecordInMemory(updated);
+    showToast('Kayıt çöp kutusuna taşındı.');
+  } catch (error) {
+    showToast(storageErrorMessage(error));
+  }
+}
+
+async function archiveRecord(record) {
+  try {
+    const updated = { ...record, archivedAt: Date.now(), updatedAt: Date.now() };
+    await persistEncryptedRecord(updated);
+    upsertRecordInMemory(updated);
+    showToast('Kayıt arşivlendi.');
+  } catch (error) {
+    showToast(storageErrorMessage(error));
+  }
+}
+
+async function unarchiveRecord(record) {
+  try {
+    const updated = { ...record, archivedAt: null, updatedAt: Date.now() };
+    await persistEncryptedRecord(updated);
+    upsertRecordInMemory(updated);
+    showToast('Kayıt arşivden çıkarıldı.');
+  } catch (error) {
+    showToast(storageErrorMessage(error));
+  }
+}
+
+async function restoreRecord(record) {
+  try {
+    const updated = { ...record, deletedAt: null, updatedAt: Date.now() };
+    await persistEncryptedRecord(updated);
+    upsertRecordInMemory(updated);
+    showToast('Kayıt geri yüklendi.');
+  } catch (error) {
+    showToast(storageErrorMessage(error));
+  }
+}
+
+async function permanentlyDeleteRecord(record) {
+  const confirmed = window.confirm(`“${record.title}” kaydı ve ekleri kalıcı olarak silinsin mi? Bu işlem geri alınamaz.`);
   if (!confirmed) return;
   try {
     await storeRequest('readwrite', store => store.delete(record.id));
-    await loadRecords();
-    showToast('Kayıt ve ekleri silindi.');
+    removeRecordsInMemory([record.id]);
+    showToast('Kayıt kalıcı olarak silindi.');
+  } catch (error) {
+    showToast(storageErrorMessage(error));
+  }
+}
+
+async function emptyTrash() {
+  const trashed = records.filter(record => Boolean(record.deletedAt));
+  if (!trashed.length) return;
+  const confirmed = window.confirm(`Çöp kutusundaki ${trashed.length} kayıt ve tüm ekleri kalıcı olarak silinsin mi? Bu işlem geri alınamaz.`);
+  if (!confirmed) return;
+  try {
+    await storeRequest('readwrite', store => {
+      for (const record of trashed) store.delete(record.id);
+      return null;
+    });
+    removeRecordsInMemory(trashed.map(record => record.id));
+    showToast('Çöp kutusu boşaltıldı.');
   } catch (error) {
     showToast(storageErrorMessage(error));
   }
@@ -1281,6 +1709,7 @@ function resetAudioModal() {
   elements.audioPreview.hidden = true;
   elements.audioTitle.value = '';
   elements.audioDescription.value = '';
+  elements.audioTags.value = '';
   elements.recordingStatus.textContent = 'Kayda hazır';
   elements.recordingTimer.textContent = '00:00';
   elements.recordingHint.textContent = 'Başlamak için kayıt düğmesine dokun.';
@@ -1440,7 +1869,7 @@ async function saveAudioRecording() {
     mimeType: recordedAudioBlob.type || 'audio/webm', blob: recordedAudioBlob, createdAt: Date.now()
   };
   try {
-    await saveMediaRecord({ title, body: elements.audioDescription.value, category: 'note', attachment });
+    await saveMediaRecord({ title, body: elements.audioDescription.value, category: 'note', attachment, tags: parseTagsInput(elements.audioTags.value) });
     closeAudioModal();
     showToast('Ses kaydı Bedrock’a kaydedildi.');
   } catch (error) {
@@ -1463,6 +1892,7 @@ function closePhotoModal() {
   elements.photoPreview.removeAttribute('src');
   elements.photoTitle.value = '';
   elements.photoDescription.value = '';
+  elements.photoTags.value = '';
   elements.photoCategory.value = 'object';
   elements.savePhoto.disabled = false;
 }
@@ -1502,7 +1932,7 @@ async function savePhotoRecord() {
       id: makeId(), kind: 'image', name: `${title}.${extension}`,
       mimeType: optimizedPhoto.type || pendingPhotoBlob.type, blob: optimizedPhoto, createdAt: Date.now()
     };
-    await saveMediaRecord({ title, body: elements.photoDescription.value, category: elements.photoCategory.value, attachment });
+    await saveMediaRecord({ title, body: elements.photoDescription.value, category: elements.photoCategory.value, attachment, tags: parseTagsInput(elements.photoTags.value) });
     closePhotoModal();
     showToast('Fotoğraf Bedrock’a kaydedildi.');
   } catch (error) {
@@ -1529,6 +1959,10 @@ function initEvents() {
     window.clearTimeout(searchDebounceTimer);
     searchDebounceTimer = window.setTimeout(renderRecords, 120);
   });
+  [elements.dateFilter, elements.contentFilter, elements.sortFilter].forEach(control => {
+    control.addEventListener('change', renderRecords);
+  });
+  elements.clearAdvancedFilters.addEventListener('click', clearAllFilters);
   elements.photoInput.addEventListener('change', handlePhotoSelected);
   elements.startRecording.addEventListener('click', startAudioRecording);
   elements.stopRecording.addEventListener('click', stopAudioRecording);
@@ -1538,16 +1972,24 @@ function initEvents() {
     const button = event.target.closest('[data-category]');
     if (!button) return;
     activeCategory = button.dataset.category;
+    activeTagFilter = '';
     updateFilterButtons();
     renderRecords();
   });
-  // The password category is handled by the shared category-filter listener.
+  // Favorites, trash and the built-in categories share one view filter.
+  elements.tagFilters.addEventListener('click', event => {
+    const button = event.target.closest('[data-tag-filter]');
+    if (button) activateTagFilter(button.dataset.tagFilter);
+  });
+  elements.emptyTrash.addEventListener('click', emptyTrash);
   const openSettings = () => {
     updateBiometricSettings();
+    updateNotificationSettings();
     elements.settingsModal.hidden = false;
     document.body.classList.add('modal-open');
   };
   document.getElementById('settingsButton').addEventListener('click', openSettings);
+  elements.enableNotifications.addEventListener('click', enableReminderNotifications);
   elements.passwordForm.addEventListener('submit', savePasswordRecord);
   document.querySelectorAll('.close-password-modal').forEach(button => button.addEventListener('click', closePasswordEditor));
   elements.passwordModal.addEventListener('click', event => { if (event.target === elements.passwordModal) closePasswordEditor(); });
@@ -1652,12 +2094,25 @@ function initEvents() {
       elements.search.focus();
     }
   });
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('message', event => {
+      if (event.data && event.data.type === 'BEDROCK_OPEN_REMINDER' && event.data.recordId) {
+        pendingReminderRecordId = event.data.recordId;
+        openPendingReminderRecord();
+      }
+    });
+  }
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) pageHiddenAt = Date.now();
-    else if (pageHiddenAt && Date.now() - pageHiddenAt > 5 * 60 * 1000 && vaultCryptoKey) lockVault();
-    if (!document.hidden) pageHiddenAt = 0;
+    else {
+      if (pageHiddenAt && Date.now() - pageHiddenAt > 5 * 60 * 1000 && vaultCryptoKey) lockVault();
+      pageHiddenAt = 0;
+      if (vaultCryptoKey) { processDueReminders(); scheduleNextReminder(); }
+    }
   });
   window.addEventListener('pagehide', () => {
+    window.clearTimeout(reminderTimer);
+    reminderTimer = null;
     stopRecordingTimer();
     stopMicrophoneTracks();
     releaseRenderedObjectUrls();
@@ -1667,6 +2122,145 @@ function initEvents() {
       setGateMode('unlock');
     }
   });
+}
+
+function openPendingReminderRecord() {
+  if (!pendingReminderRecordId || !vaultCryptoKey) return;
+  const record = records.find(item => item.id === pendingReminderRecordId);
+  if (!record) {
+    pendingReminderRecordId = null;
+    return;
+  }
+  pendingReminderRecordId = null;
+  activeCategory = record.deletedAt ? 'trash' : record.archivedAt ? 'archive' : 'all';
+  activeTagFilter = '';
+  elements.search.value = record.title;
+  elements.dateFilter.value = 'all';
+  elements.contentFilter.value = 'all';
+  elements.sortFilter.value = 'newest';
+  updateFilterButtons();
+  renderRecords();
+  window.setTimeout(() => {
+    const card = elements.list.querySelector(`[data-record-id="${CSS.escape(record.id)}"]`);
+    if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, 100);
+}
+
+function updateNotificationSettings() {
+  const supported = 'Notification' in window && 'serviceWorker' in navigator;
+  if (!supported) {
+    elements.notificationsStatus.textContent = 'Bu tarayıcı bildirim API’sini desteklemiyor.';
+    elements.enableNotifications.textContent = 'Bildirimler desteklenmiyor';
+    elements.enableNotifications.disabled = true;
+    return;
+  }
+  elements.enableNotifications.disabled = Notification.permission === 'granted';
+  if (Notification.permission === 'granted') {
+    elements.notificationsStatus.textContent = 'İzin verildi. Bedrock uygun olduğunda hatırlatma bildirimi gösterebilir.';
+    elements.enableNotifications.textContent = 'Bildirimler etkin';
+  } else if (Notification.permission === 'denied') {
+    elements.notificationsStatus.textContent = 'Bildirim izni engellendi. Android/tarayıcı site ayarlarından izin vermelisin.';
+    elements.enableNotifications.textContent = 'Site ayarlarını kontrol et';
+    elements.enableNotifications.disabled = false;
+  } else {
+    elements.notificationsStatus.textContent = 'Henüz izin verilmedi. Hatırlatma kullanmak için etkinleştirebilirsin.';
+    elements.enableNotifications.textContent = 'Hatırlatma bildirimlerini etkinleştir';
+  }
+}
+
+async function enableReminderNotifications() {
+  if (!('Notification' in window) || !('serviceWorker' in navigator)) {
+    showToast('Bu tarayıcı bildirimleri desteklemiyor.');
+    updateNotificationSettings();
+    return;
+  }
+  try {
+    if (Notification.permission === 'denied') {
+      showToast('Bildirim izni tarayıcı site ayarlarından açılmalı.');
+      return;
+    }
+    const permission = await Notification.requestPermission();
+    updateNotificationSettings();
+    if (permission === 'granted') {
+      showToast('Hatırlatma bildirimleri etkinleştirildi.');
+      await processDueReminders();
+      scheduleNextReminder();
+    } else {
+      showToast('Bildirim izni verilmedi. Hatırlatmalar Bedrock açıkken gösterilebilir.');
+    }
+  } catch (error) {
+    updateNotificationSettings();
+    showToast('Bildirim izni alınamadı. Tarayıcı izinlerini kontrol et.');
+  }
+}
+
+async function deliverReminderNotification(record) {
+  if (!('Notification' in window) || Notification.permission !== 'granted' || !('serviceWorker' in navigator)) return false;
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    await registration.showNotification('Bedrock hatırlatması', {
+      body: `“${record.title}” için hatırlatma zamanı geldi.`,
+      icon: './icons/bedrock-192.png',
+      badge: './icons/bedrock-192.png',
+      tag: `bedrock-reminder-${record.id}`,
+      timestamp: record.reminderAt,
+      data: { recordId: record.id },
+      renotify: false
+    });
+    return true;
+  } catch (error) {
+    console.warn('Hatırlatma bildirimi gösterilemedi:', error);
+    return false;
+  }
+}
+
+async function processDueReminders() {
+  if (!vaultCryptoKey || reminderDispatchRunning) return;
+  reminderDispatchRunning = true;
+  try {
+    const now = Date.now();
+    const due = records.filter(record => record.reminderAt && record.reminderAt <= now
+      && !record.reminderNotifiedAt && !record.deletedAt && !record.archivedAt);
+    for (const record of due) {
+      let delivered = false;
+      const notificationPermission = 'Notification' in window ? Notification.permission : 'denied';
+      if (notificationPermission === 'granted') delivered = await deliverReminderNotification(record);
+      if (!delivered && !document.hidden) {
+        showToast(`Hatırlatma zamanı: ${record.title}`);
+      }
+      if (delivered || !document.hidden) {
+        const updated = { ...record, reminderNotifiedAt: Date.now() };
+        try {
+          await persistEncryptedRecord(updated);
+          const index = records.findIndex(item => item.id === updated.id);
+          if (index >= 0) records[index] = updated;
+        } catch (error) {
+          console.warn('Hatırlatma durumu kaydedilemedi:', error);
+        }
+      }
+    }
+  } finally {
+    reminderDispatchRunning = false;
+    scheduleNextReminder();
+  }
+}
+
+function scheduleNextReminder() {
+  window.clearTimeout(reminderTimer);
+  reminderTimer = null;
+  if (!vaultCryptoKey) return;
+  const now = Date.now();
+  const overdue = records.some(record => record.reminderAt && record.reminderAt <= now && !record.reminderNotifiedAt && !record.deletedAt && !record.archivedAt);
+  if (overdue && !document.hidden) {
+    reminderTimer = window.setTimeout(() => { processDueReminders(); }, 250);
+    return;
+  }
+  const next = records
+    .filter(record => record.reminderAt && record.reminderAt > now && !record.reminderNotifiedAt && !record.deletedAt && !record.archivedAt)
+    .sort((a, b) => a.reminderAt - b.reminderAt)[0];
+  if (!next) return;
+  const delay = Math.max(250, Math.min(next.reminderAt - now + 50, 2147483000));
+  reminderTimer = window.setTimeout(() => { processDueReminders(); }, delay);
 }
 
 async function registerServiceWorker() {
@@ -1684,6 +2278,14 @@ async function registerServiceWorker() {
 
 async function init() {
   initEvents();
+  try {
+    const currentUrl = new URL(window.location.href);
+    pendingReminderRecordId = currentUrl.searchParams.get('reminder') || null;
+    if (pendingReminderRecordId) {
+      currentUrl.searchParams.delete('reminder');
+      window.history.replaceState({}, '', currentUrl);
+    }
+  } catch (_) { pendingReminderRecordId = null; }
   try {
     if (!window.isSecureContext || !window.crypto || !window.crypto.subtle) {
       throw new Error('Güvenli kasa için Bedrock’u HTTPS üzerinden veya localhost üzerinde açmalısın.');

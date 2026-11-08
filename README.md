@@ -1,53 +1,43 @@
-# Bedrock — v0.5
+# Bedrock — v0.7
 
 Bedrock; yazılı notları, eşya konumlarını, parola kayıtlarını, sesleri ve fotoğrafları cihazında tutan, çevrimdışı çalışabilen şifreli kişisel kasa PWA'sıdır.
 
-## v0.5 yenilikleri
+## v0.7 yenilikleri
 
-- **Parola kayıtları:** Hizmet adı, kullanıcı adı/e-posta, parola, site adresi ve ek notlar tek kayıt içinde saklanır.
-- **Hassas gösterim:** Parolalar kayıt listesinde gösterilmez. Detay ekranında kullanıcı açabilir veya tek tek kopyalayabilir.
-- **Şifreli yedekleme:** Kasa ana parolası tekrar doğrulanır; yedek dosyasının tamamı ayrıca AES-256-GCM ile şifrelenir.
-- **Geri yükleme:** `.bedrock` yedeği seçilir, ana parola ile açılır ve açık onaydan sonra mevcut kasa yerine yüklenir. Yedek dosyası için 100 MB boyut sınırı uygulanır.
-- **Biyometrik kayıtlar:** Yedek dosyasına cihaz-özel biyometrik bağ eklenmez; geri yüklemeden sonra biyometrik hızlı açma tekrar kurulabilir.
-- **Fotoğraf optimizasyonu:** Büyük görseller uygunsa 1600 piksel uzun kenara ve JPEG kalite 0.82 seviyesine indirilerek saklanır.
-- **Mobil performans:** Kayıtlar küçük gruplar halinde çözülür, arama 120 ms gecikmeyle toplulaştırılır, liste DOM'a tek parça eklenir ve mobilde ağır arka plan bulanıklığı azaltılır.
-- **PWA güncellemesi:** Service Worker önbelleği v5 olarak yenilenir. Aynı yayın adresi ve tarayıcı profili korunur.
+- **Gelişmiş arama:** Başlık, açıklama, kullanıcı adı/web adresi, kategori, etiket ve ek dosya adlarında arama.
+- **Filtreleme:** Son güncelleme tarihine (bugün / 7 gün / 30 gün / daha eski), kayıt içeriğine (metin / fotoğraf / ses / medya / parola) göre filtreleme.
+- **Sıralama:** En yeni, en eski, başlık A–Z ve Z–A.
+- **Arşiv:** Kayıtları silmeden ana listeden kaldırma, arşive taşıma ve arşivden geri alma. Arşiv metadata'sı da şifreli.
+- **Hatırlatmalar:** Yazılı not ve eşya kayıtlarına yerel tarih-saat seçerek hatırlatma ekleme. İzin verildiğinde Service Worker üzerinden Android bildirimi gösterilir; uygulama tekrar açıldığında geçmiş zamanı gelmiş ve henüz işlenmemiş hatırlatmalar da kontrol edilir.
+- **Eski kayıt uyumluluğu:** v0.6 kayıtlarında bulunmayan `archivedAt`, `reminderAt` ve `reminderNotifiedAt` alanları varsayılan olarak boş atanır.
+- **Yedek uyumluluğu:** Şifreli kayıt zarfının biçimi ve yedek formatı değişmedi. Yeni alanlar kayıt metaverisinin şifreli içeriğine eklendi; eski yedekler açılabilir.
+- **PWA güncellemesi:** Service Worker önbelleği `bedrock-shell-v7-0` olarak yenilendi.
 
-## v0.4'ten yükseltme
+## Hatırlatmaların PWA sınırı
 
-1. Önce mevcut Bedrock yedeğini alabilir durumdaysan yedekle. v0.4'te dışa aktarma yoksa, kritik tek kopya kayıtlarını yedekleme eklenene kadar silme.
-2. v0.5 dosyalarını aynı HTTPS alan adına ve aynı klasör yoluna yükle. `manifest.webmanifest` içindeki `id`, `start_url` ve `scope` değerlerini değiştirme.
-3. Telefonda aynı Chrome profiliyle Bedrock'u çevrimiçiyken bir kez aç. Service Worker yeni önbelleği kurar.
-4. Var olan kasa ana parolasıyla giriş yap. v0.5 mevcut `bedrock-local` IndexedDB veritabanını ve şemayı korur.
+PWA sürümünde alarm zamanlayıcısı uygulama sayfası çalışırken zamanlayıcı kurar; bildirim izni varsa `ServiceWorkerRegistration.showNotification()` kullanır. Android Chrome'da bildirimler Service Worker üzerinden gösterilmelidir.
 
-> GitHub Pages/host üzerinde dosyaları güncelledikten sonra tarayıcı eski uygulamayı göstermeye devam ederse uygulamayı tamamen kapatıp yeniden aç. Site verilerini veya IndexedDB'yi temizleme.
+**Uygulama tamamen kapatıldığında sıradan PWA JavaScript zamanlayıcısı çalışmaya devam etmez.** Bu nedenle yalnızca PWA ile uygulama kapalıyken kesin zamanlı, çevrimdışı alarm garantisi verilemez. Uygulama açıkken veya arka planda tarayıcı sayfayı yaşattığı sürece bildirim gösterilebilir; kapatıldıysa Bedrock tekrar açıldığında zamanı geçmiş ve işlenmemiş hatırlatmalar kontrol edilir. İzin kapalıysa Bedrock açıkken uygulama içi uyarı gösterir.
 
-## Şifreleme
+Uygulama kapalıyken güvenilir alarm için v1.0 APK aşamasında TWA yerine yerel bildirim eklentisi içeren bir Android kabuğu (ör. Capacitor Local Notifications) kullanılmalı veya TWA'ya özel native Android köprüsü eklenmelidir. Bu ayrı bir Android entegrasyonudur; hatırlatmalar internet/push sunucusu kullanmaz.
 
-- Kasa veri anahtarı rastgele 256 bit olarak oluşturulur.
-- Ana parola PBKDF2-HMAC-SHA-256 ile 310.000 yineleme kullanılarak AES-256-GCM anahtarına dönüştürülür ve veri anahtarını sarmalar.
-- Not metaverisi, parola alanları, fotoğraflar ve sesler ayrı IV ve kayıt/ek kimliğiyle ilişkili ek doğrulama verisi (AAD) kullanılarak AES-GCM ile şifrelenir.
-- Dışa aktarılan yedek, aynı ana parola yeniden doğrulandıktan sonra yeni salt ve IV ile ayrıca AES-256-GCM olarak şifrelenir.
-- Şifreli yedek dosyası tüm kayıtları ve kasa anahtarının parola ile sarılmış yapılandırmasını içerir. Geri yükleme yedeğin alındığı dönemdeki ana parolayı gerektirir.
-- Arama yalnızca kasa açıkken belleğe alınmış çözülmüş alanlarda yapılır. Parola değerinin kendisi arama dizisine eklenmez.
+## Güncelleme
 
-## Yedekleme kullanımı
+1. **Önce şifreli yedek al.** Özellikle ana parolanı güvenli yerde tuttuğundan emin ol.
+2. ZIP içindeki `bedrock-v0.7` klasörünün içeriğini mevcut GitHub Pages deposunun aynı dizinine yükle ve eski dosyaların üzerine yaz.
+3. `manifest.webmanifest` içindeki `id`, `start_url` ve `scope` değerlerini değiştirme. Aynı domain/klasör yolunu kullan.
+4. Telefonda aynı Chrome profiliyle Bedrock'u çevrimiçiyken bir kez aç. Service Worker v7 önbelleğini kuracaktır.
+5. Eski ana parolanla giriş yap. IndexedDB adı ve sürümü değişmedi.
 
-**Yedek oluştur:** Ayarlar → Şifreli yedek oluştur → ana parolanı tekrar gir → `.bedrock` dosyasını ayrı ve güvenli bir yerde sakla.
+> Tarayıcı site verilerini veya IndexedDB'yi temizleme. Uygulama verisini silmek yerel kayıtlarını silebilir.
 
-**Geri yükle:** Kilit ekranındaki veya Ayarlar bölümündeki geri yükleme düğmesi → `.bedrock` dosyasını seç → yedek alındığında kullanılan ana parolayı gir → mevcut kasanın tamamının değişeceğini onayla.
+## Kullanım
 
-Geri yükleme birleştirme yapmaz; mevcut kayıtların yerine yedek içeriğini koyar. Başka cihazda biyometrik hızlı açma devre dışı kalır ve yeniden kurulması gerekir.
-
-## Güvenlik uyarıları
-
-- Ana parolanı unutursan ve kullanılabilir biyometrik açman yoksa kasa ve yedekler kurtarılamaz.
-- Yedek dosyası ile ana parolayı aynı yerde saklama.
-- Ana parolanı değiştirdikten sonra eski yedekler, yedeği aldığın tarihteki eski ana parolayı kullanır.
-- Bedrock tarayıcı depolamasını kullanır. Uygulama verisini/tarayıcı site verilerini silmek yerel verileri silebilir.
-- Kasa açıkken cihazına erişebilen zararlı yazılım, ekran kaydı veya kötü amaçlı uzantılar çözülmüş bilgileri okuyabilir. Şifreleme her saldırı türüne karşı mutlak koruma değildir.
-- Bu proje kişisel bir prototiptir; kritik hesapların için profesyonel, denetlenmiş bir parola yöneticisinin yerini aldığı varsayılmamalıdır.
-- Parolayı görüntüleme/kopyalama işlemi yalnızca kullanıcının açıkça seçmesiyle yapılır. Pano içeriği diğer uygulamalarda erişilebilir olabilir; gerekmiyorsa kopyalama.
+- Kayıt oluştur/düzenle ekranında `Hatırlatma zamanı` alanına yerel tarih ve saat seç.
+- Bildirim iznini Ayarlar → Hatırlatma bildirimlerini etkinleştir yoluyla ver.
+- Hatırlatma zamanı geldiğinde PWA çalışıyorsa bildirim gösterilir. Uygulama kapalı kalmışsa açıldığında zamanı geçmiş hatırlatmalar kontrol edilir.
+- Bir kayıt arşivlendiğinde veya çöp kutusuna taşındığında hatırlatması geçici olarak bekletilir. Arşivden çıkarıldığında/geri yüklendiğinde tekrar takip edilir.
+- Tarih/içerik filtrelerini `Filtrele ve sırala` alanından kullan. `Filtreleri sıfırla` arama ve görünüm filtrelerini temizler.
 
 ## Yerel geliştirme
 
@@ -55,26 +45,10 @@ Geri yükleme birleştirme yapmaz; mevcut kayıtların yerine yedek içeriğini 
 python -m http.server 8000
 ```
 
-Bilgisayarda `http://localhost:8000` açılır. Android cihazda kamera, mikrofon, Web Crypto, Service Worker ve WebAuthn için HTTPS gerekir. Telefonda, uygulamayı daha önce kullandığın **aynı origin** üzerinden aç.
+Bilgisayarda `http://localhost:8000` açılır. Android cihazda kamera, mikrofon, Web Crypto, Service Worker, bildirim ve WebAuthn için HTTPS gerekir.
 
-## Android APK / TWA paketleme
+## Güvenlik notu
 
-Bedrock önce HTTPS üzerinde yayınlanan bir PWA olarak kalır. Android uygulaması oluşturmak için PWABuilder arayüzü kullanılabilir; PWABuilder Android çıktısı Bubblewrap tabanlı Trusted Web Activity (TWA) üretir. Android Studio'yu elle kullanmadan paket hazırlanabilir, ancak paketlemenin arka planında Android araç zinciri kullanılır.
+Etiketler, favoriler, silme, arşiv ve hatırlatma metadata'sı AES-256-GCM ile şifrelenen kayıt verisinin içindedir. Yedek dosyası şifreli kalır. Bildirim başlığı uygulama/telefon ekranında görünebilir; bu nedenle parola veya çok hassas bilgileri kayıt başlığına yazmamaya dikkat et.
 
-Ayrıntılı adımlar için `ANDROID-PACKAGING.md` dosyasına bak. TWA'nın tam ekran doğrulaması için imzalı uygulamaya ait SHA-256 sertifika parmak izini içeren `/.well-known/assetlinks.json` dosyası sitenin origin kökünde yayınlanmalıdır.
-
-## Teknik dosyalar
-
-- `index.html` — uygulama yapısı
-- `styles.css` — masaüstü ve mobil görünüm
-- `app.js` — kasa, şifreleme, parola kayıtları, kamera/ses ve yedekleme
-- `sw.js` — çevrimdışı uygulama kabuğu (v5 cache)
-- `manifest.webmanifest` — PWA/Android uygulama metaverisi
-- `icons/` — uygulama simgeleri
-
-
-## v0.5.1 düzeltmeleri
-
-- Mobil not formundaki Kaydet düğmesinin alt gezinme çubuğunun arkasında kalmasına neden olan katman sırası düzeltildi. Açık formlar artık mobil gezinme çubuğunun üzerinde görüntülenir.
-- Alt gezinme çubuğundaki ikinci Ayarlar düğmesi kaldırıldı. Ayarlar yalnızca üst çubuktaki dişli düğmesinden açılır.
-- Service Worker önbellek sürümü yenilendi; güncelleme yayımlandığında telefon yeni CSS ve JavaScript dosyalarını alır.
+Bedrock kişisel bir prototiptir; kritik hesaplar için profesyonel, bağımsız denetimli parola yöneticisinin yerini aldığı varsayılmamalıdır.
