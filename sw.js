@@ -1,5 +1,5 @@
 'use strict';
-const CACHE_NAME = 'bedrock-shell-v7-0';
+const CACHE_NAME = 'bedrock-shell-v8-0';
 const APP_SHELL = [
   './',
   './index.html',

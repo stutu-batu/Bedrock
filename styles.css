@@ -239,3 +239,23 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
   .reminder-field-group{padding:11px}
   .reminder-field-group input{font-size:16px}
 }
+
+
+/* Bedrock v0.8 — authenticated backups and visible security checks */
+#securityAuditModal{z-index:72}
+.audit-results{display:grid;gap:9px;margin:15px 0 4px}
+.audit-item{display:grid;grid-template-columns:29px minmax(0,1fr);align-items:start;gap:10px;padding:11px;border:1px solid rgba(139,155,170,.17);border-radius:12px;background:rgba(30,38,48,.58)}
+.audit-icon{display:grid;place-items:center;width:27px;height:27px;border-radius:9px;background:rgba(198,238,135,.1);color:var(--accent);font-size:13px;font-weight:800}
+.audit-item.is-fail .audit-icon{background:rgba(240,130,130,.1);color:#f0a0a0}
+.audit-copy{min-width:0}
+.audit-copy strong{display:block;color:var(--text);font-size:11px}
+.audit-copy p{margin:4px 0 0;color:var(--muted);font-size:10px;line-height:1.5;overflow-wrap:anywhere}
+.audit-summary{margin:0;padding:12px;border-radius:11px;background:rgba(198,238,135,.08);color:#d7edbb;font-size:11px;line-height:1.5}
+.audit-summary.has-failures{background:rgba(240,130,130,.08);color:#f0b0b0}
+#backupImportFileName{margin:0 0 12px;overflow-wrap:anywhere}
+@media(max-width:720px){
+  .audit-results{gap:8px;margin:12px 0 3px}
+  .audit-item{padding:10px;gap:9px}
+  .audit-copy strong{font-size:11px}
+  .audit-copy p{font-size:10px}
+}

@@ -39,6 +39,10 @@ Resmî açıklamalar:
 - PWABuilder Android paketleme: https://github.com/pwa-builder/PWABuilder/blob/main/docs/builder/other-android.md
 - Chrome TWA hızlı başlangıç: https://developer.chrome.com/docs/android/trusted-web-activity/quick-start
 
+## v0.8 yedek ve güvenlik notu
+
+APK paketlemeden önce v0.8 içinden bir şifreli yedek al ve mümkünse `Yedek dosyasını doğrula` ile doğrula. TWA/uygulama paketi aynı HTTPS origin ve alt yolunu kullanmalı; aksi hâlde IndexedDB ve WebAuthn kaydı ayrı bir origin olarak değerlendirilir.
+
 ## v0.7 hatırlatma bildirimi notu
 
 PWA Service Worker bildirim gösterebilir, ancak sayfa tamamen kapalıyken gelecekteki yerel bir alarmı kendi kendine başlatamaz. Uygulama kapalıyken kesin ve çevrimdışı alarm için Android yerel bildirim API'si kullanan bir paketleme katmanı veya native köprü gerekir. TWA tek başına bu yerel zamanlayıcıyı sağlamaz.

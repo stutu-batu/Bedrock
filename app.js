@@ -10,9 +10,15 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const MAX_PHOTO_BYTES = 18 * 1024 * 1024;
 const MAX_AUDIO_MILLISECONDS = 10 * 60 * 1000;
-const BACKUP_FORMAT = 'bedrock-backup-v1';
+const BACKUP_FORMAT = 'bedrock-backup-v1'; // v0.7 format; retained for restore compatibility.
 const BACKUP_PAYLOAD_FORMAT = 'bedrock-backup-payload-v1';
+const BACKUP_FORMAT_V2 = 'bedrock-backup-v2';
+const BACKUP_PAYLOAD_FORMAT_V2 = 'bedrock-backup-payload-v2';
 const BACKUP_MAX_BYTES = 100 * 1024 * 1024;
+const BACKUP_MAX_RECORDS = 50000;
+const BACKUP_MAX_ATTACHMENTS_PER_RECORD = 250;
+const BACKUP_MAX_METADATA_BYTES = 2 * 1024 * 1024;
+const APP_VERSION = '0.8.0';
 const MAX_IMAGE_EDGE = 1600;
 const IMAGE_JPEG_QUALITY = 0.82;
 
@@ -112,7 +118,11 @@ const elements = {
   backupImportError: document.getElementById('backupImportError'),
   confirmBackupImport: document.getElementById('confirmBackupImport'),
   backupImportFileName: document.getElementById('backupImportFileName'),
-  backupFileInput: document.getElementById('backupFileInput')
+  backupFileInput: document.getElementById('backupFileInput'),
+  verifyBackup: document.getElementById('verifyBackupButton'),
+  runSecurityAudit: document.getElementById('runSecurityAuditButton'),
+  securityAuditModal: document.getElementById('securityAuditModal'),
+  securityAuditResults: document.getElementById('securityAuditResults')
 };
 
 let database;
@@ -138,6 +148,9 @@ let gateMode = 'setup';
 let pageHiddenAt = 0;
 let activePasswordRecordId = null;
 let pendingBackupFile = null;
+let backupImportMode = 'restore';
+let securityAuditRunning = false;
+let securityAuditReturnToSettings = false;
 let searchDebounceTimer = null;
 let reminderTimer = null;
 let reminderDispatchRunning = false;
@@ -1321,6 +1334,15 @@ function encodeBinaryForBackup(value) {
   throw new Error('Yedekte beklenmeyen bir veri biçimi bulundu.');
 }
 
+function decodeBackupBase64(value, label, minBytes = 1, maxBytes = BACKUP_MAX_BYTES) {
+  if (typeof value !== 'string' || !value || value.length > Math.ceil(maxBytes * 4 / 3) + 8 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)) {
+    throw new Error(`${label} alanı geçersiz.`);
+  }
+  const bytes = base64ToBytes(value);
+  if (bytes.byteLength < minBytes || bytes.byteLength > maxBytes) throw new Error(`${label} boyutu geçersiz.`);
+  return bytes;
+}
+
 function encodeRecordForBackup(record) {
   return {
     id: record.id,
@@ -1339,58 +1361,127 @@ function encodeRecordForBackup(record) {
   };
 }
 
-function decodeRecordFromBackup(record) {
-  if (!record || typeof record.id !== 'string' || record.format !== VAULT_FORMAT || !Array.isArray(record.attachments)) {
+function validateRecordEnvelopeShape(record) {
+  if (!record || typeof record.id !== 'string' || record.id.length < 1 || record.id.length > 160 || record.format !== VAULT_FORMAT || !Array.isArray(record.attachments)) {
     throw new Error('Yedekte geçersiz bir kayıt bulundu.');
   }
+  if (record.attachments.length > BACKUP_MAX_ATTACHMENTS_PER_RECORD) throw new Error('Bir kayıtta izin verilenden fazla ek var.');
   const decoded = {
     id: record.id,
     format: record.format,
-    metaIv: base64ToBytes(record.metaIv),
-    metaCipher: base64ToBytes(record.metaCipher),
-    attachments: record.attachments.map(item => {
-      if (!item || typeof item.id !== 'string' || !['image', 'audio'].includes(item.kind)) throw new Error('Yedekte geçersiz bir ek bulundu.');
-      return {
-        id: item.id,
-        kind: item.kind,
-        name: String(item.name || ''),
-        mimeType: String(item.mimeType || 'application/octet-stream'),
-        createdAt: Number(item.createdAt) || Date.now(),
-        iv: base64ToBytes(item.iv),
-        cipher: base64ToBytes(item.cipher)
-      };
-    })
+    metaIv: decodeBackupBase64(record.metaIv, 'Kayıt başlığı IV', 12, 12),
+    metaCipher: decodeBackupBase64(record.metaCipher, 'Kayıt başlığı', 16, BACKUP_MAX_METADATA_BYTES),
+    attachments: []
   };
-  if (decoded.metaIv.length !== 12 || decoded.metaCipher.length < 16) throw new Error('Yedek dosyası bozuk veya eksik.');
-  for (const item of decoded.attachments) if (item.iv.length !== 12 || item.cipher.length < 16) throw new Error('Yedek eki bozuk veya eksik.');
+  const attachmentIds = new Set();
+  for (const item of record.attachments) {
+    if (!item || typeof item.id !== 'string' || item.id.length < 1 || item.id.length > 160 || !['image', 'audio'].includes(item.kind)) {
+      throw new Error('Yedekte geçersiz bir medya eki bulundu.');
+    }
+    if (attachmentIds.has(item.id)) throw new Error('Yedekte yinelenen medya eki kimliği bulundu.');
+    attachmentIds.add(item.id);
+    const name = String(item.name || '');
+    const mimeType = String(item.mimeType || 'application/octet-stream');
+    if (name.length > 512 || mimeType.length > 160) throw new Error('Yedekte medya bilgisi beklenenden uzun.');
+    const createdAt = Number(item.createdAt);
+    if (!Number.isFinite(createdAt) || createdAt < 0) throw new Error('Yedekte medya tarihi geçersiz.');
+    decoded.attachments.push({
+      id: item.id,
+      kind: item.kind,
+      name,
+      mimeType,
+      createdAt,
+      iv: decodeBackupBase64(item.iv, 'Medya IV', 12, 12),
+      cipher: decodeBackupBase64(item.cipher, 'Şifreli medya', 16, BACKUP_MAX_BYTES)
+    });
+  }
   return decoded;
 }
 
+function validateVaultConfigForBackup(config) {
+  if (!config || config.key !== 'vaultConfig' || config.version !== 1 || config.kdf !== 'PBKDF2-SHA-256' || !Number.isInteger(config.iterations) || config.iterations < 100000 || config.iterations > 1000000) {
+    throw new Error('Yedekte kasa anahtarı bulunamadı veya şifreleme ayarları geçersiz.');
+  }
+  const salt = decodeBackupBase64(config.salt, 'Kasa tuzu', 16, 16);
+  const wrapIv = decodeBackupBase64(config.wrapIv, 'Kasa anahtarı IV', 12, 12);
+  const wrappedKey = decodeBackupBase64(config.wrappedKey, 'Şifreli kasa anahtarı', 48, 256);
+  if (salt.length !== 16 || wrapIv.length !== 12 || wrappedKey.length < 48) throw new Error('Yedekteki kasa anahtarı verisi bozuk.');
+  return { ...config, biometric: null };
+}
+
+async function verifyEncryptedRecordCollection(encryptedRecords, key) {
+  if (!Array.isArray(encryptedRecords) || encryptedRecords.length > BACKUP_MAX_RECORDS) throw new Error('Kayıt listesi geçersiz veya sınırı aşıyor.');
+  const recordIds = new Set();
+  let attachmentCount = 0;
+  for (const envelope of encryptedRecords) {
+    if (!envelope || typeof envelope.id !== 'string' || recordIds.has(envelope.id)) throw new Error('Yedekte yinelenen veya geçersiz kayıt kimliği bulundu.');
+    recordIds.add(envelope.id);
+    if (envelope.format !== VAULT_FORMAT || !Array.isArray(envelope.attachments) || envelope.attachments.length > BACKUP_MAX_ATTACHMENTS_PER_RECORD) throw new Error('Yedekte geçersiz bir kayıt zarfı bulundu.');
+
+    const metadataBytes = await decryptBytes({ iv: envelope.metaIv, cipher: envelope.metaCipher }, key, `bedrock-record:${envelope.id}:meta`);
+    if (metadataBytes.byteLength > BACKUP_MAX_METADATA_BYTES) throw new Error('Bir kaydın şifreli metaverisi izin verilen boyutu aşıyor.');
+    let metadata;
+    try { metadata = JSON.parse(decoder.decode(metadataBytes)); }
+    catch (_) { throw new Error('Bir kaydın metaverisi okunamıyor.'); }
+    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata) || !['note', 'object', 'password'].includes(metadata.category)) {
+      throw new Error('Yedekte geçersiz kayıt bilgisi bulundu.');
+    }
+    if (typeof metadata.title !== 'string' || metadata.title.length > 1000 || typeof metadata.body !== 'string' || metadata.body.length > 100000) {
+      throw new Error('Yedekte başlık veya açıklama alanı geçersiz.');
+    }
+    if (!Number.isFinite(metadata.createdAt) || !Number.isFinite(metadata.updatedAt)) throw new Error('Yedekte kayıt tarihi geçersiz.');
+    if (metadata.category === 'password') {
+      if (!metadata.credential || typeof metadata.credential !== 'object' || typeof metadata.credential.password !== 'string') throw new Error('Yedekte parola kaydı eksik veya bozuk.');
+    }
+
+    const attachmentIds = new Set();
+    for (const item of envelope.attachments) {
+      if (!item || typeof item.id !== 'string' || attachmentIds.has(item.id) || !['image', 'audio'].includes(item.kind)) throw new Error('Yedekte geçersiz medya eki bulundu.');
+      attachmentIds.add(item.id);
+      // Decrypt one attachment at a time. This authenticates each AES-GCM payload
+      // without retaining all expanded media in memory on low-memory phones.
+      const bytes = await decryptBytes({ iv: item.iv, cipher: item.cipher }, key, `bedrock-record:${envelope.id}:attachment:${item.id}`);
+      if (!bytes || bytes.byteLength === 0) throw new Error('Yedekte boş veya bozuk medya eki bulundu.');
+      attachmentCount += 1;
+    }
+  }
+  return { recordCount: encryptedRecords.length, attachmentCount };
+}
+
+function backupV2AdditionalData(envelope) {
+  return `${BACKUP_FORMAT_V2}|${envelope.version}|${envelope.kdf}|${envelope.iterations}`;
+}
+
 async function createEncryptedBackup(password) {
-  // Requiring the current vault password prevents exporting from a stale or unattended session.
-  await unwrapVaultKey(vaultConfig, password);
+  // Re-unwrap and verify the vault before export. This also detects a corrupt local record
+  // instead of producing a backup that cannot later be restored.
+  const exportKey = await unwrapVaultKey(vaultConfig, password);
   const storedRecords = await storeRequest('readonly', store => store.getAll());
+  await verifyEncryptedRecordCollection(storedRecords, exportKey);
   const payload = {
-    format: BACKUP_PAYLOAD_FORMAT,
-    version: 1,
+    format: BACKUP_PAYLOAD_FORMAT_V2,
+    version: 2,
+    appVersion: APP_VERSION,
     exportedAt: Date.now(),
     vaultConfig: { ...vaultConfig, biometric: null },
     records: storedRecords.map(encodeRecordForBackup)
   };
+  const plaintext = encoder.encode(JSON.stringify(payload));
   const salt = randomBytes(16);
-  const wrappingKey = await derivePasswordWrappingKey(password, salt, PBKDF2_ITERATIONS);
-  const encrypted = await encryptBytes(encoder.encode(JSON.stringify(payload)), wrappingKey, BACKUP_FORMAT);
   const envelope = {
-    format: BACKUP_FORMAT,
-    version: 1,
+    format: BACKUP_FORMAT_V2,
+    version: 2,
     kdf: 'PBKDF2-SHA-256',
     iterations: PBKDF2_ITERATIONS,
-    salt: bytesToBase64(salt),
-    iv: bytesToBase64(encrypted.iv),
-    cipher: bytesToBase64(new Uint8Array(encrypted.cipher))
+    salt: bytesToBase64(salt)
   };
-  const blob = new Blob([JSON.stringify(envelope)], { type: 'application/vnd.bedrock.backup+json' });
-  if (blob.size > BACKUP_MAX_BYTES) throw new Error('Yedek dosyası 100 MB sınırını aşıyor.');
+  const wrappingKey = await derivePasswordWrappingKey(password, salt, envelope.iterations);
+  const encrypted = await encryptBytes(plaintext, wrappingKey, backupV2AdditionalData(envelope));
+  envelope.iv = bytesToBase64(encrypted.iv);
+  envelope.cipher = bytesToBase64(new Uint8Array(encrypted.cipher));
+  const json = JSON.stringify(envelope);
+  const blob = new Blob([json], { type: 'application/vnd.bedrock.backup+json' });
+  if (blob.size > BACKUP_MAX_BYTES) throw new Error('Yedek dosyası 100 MB sınırını aşıyor. Büyük medya kayıtlarını azaltıp tekrar dene.');
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
@@ -1410,15 +1501,19 @@ async function handleBackupExport(event) {
   try {
     await createEncryptedBackup(password);
     closeBackupExport();
-    showToast('Şifreli Bedrock yedeği indirildi.');
+    showToast('Şifreli Bedrock yedeği oluşturuldu. Dosyayı güvenli bir yerde sakla.');
   } catch (error) {
-    elements.backupExportError.textContent = 'Ana parola yanlış veya yedek oluşturulamadı.';
+    console.error('Bedrock yedek oluşturma:', error);
+    elements.backupExportError.textContent = error.name === 'OperationError'
+      ? 'Ana parola yanlış veya yerel kayıtlardan biri doğrulanamadı.'
+      : (error.message || 'Yedek oluşturulamadı.');
   } finally {
     elements.confirmBackupExport.disabled = false;
   }
 }
 
-function chooseBackupFile() {
+function chooseBackupFile(mode = 'restore') {
+  backupImportMode = mode === 'verify' ? 'verify' : 'restore';
   elements.backupFileInput.value = '';
   elements.backupFileInput.click();
 }
@@ -1438,7 +1533,13 @@ function handleBackupFileChosen(event) {
   elements.backupImportFileName.textContent = file.name;
   elements.backupImportPassword.value = '';
   elements.backupImportError.textContent = '';
+  const verifyOnly = backupImportMode === 'verify';
   elements.settingsModal.hidden = true;
+  document.getElementById('backupImportTitle').textContent = verifyOnly ? 'Yedeği doğrula.' : 'Yedeği aç.';
+  document.getElementById('backupImportIntro').textContent = verifyOnly
+    ? 'Dosyanın parolasını, kayıtlarını ve ekli medyalarını kontrol edeceğiz. Bu işlem mevcut kasayı değiştirmez.'
+    : 'Yedek açılmadan önce tüm kayıtlar ve ekler doğrulanır. Geri yükleme mevcut kasanın yerine geçer.';
+  elements.confirmBackupImport.textContent = verifyOnly ? 'Yedeği doğrula' : 'Yedeği geri yükle';
   elements.backupImportModal.hidden = false;
   document.body.classList.add('modal-open');
 }
@@ -1448,7 +1549,49 @@ function closeBackupImport() {
   elements.backupImportForm.reset();
   elements.backupImportError.textContent = '';
   pendingBackupFile = null;
+  backupImportMode = 'restore';
+  document.getElementById('backupImportTitle').textContent = 'Yedeği aç.';
+  document.getElementById('backupImportIntro').textContent = 'Yedek açılmadan önce tüm kayıtlar ve ekler doğrulanır. Geri yükleme mevcut kasanın yerine geçer.';
+  elements.confirmBackupImport.textContent = 'Yedeği geri yükle';
   document.body.classList.remove('modal-open');
+}
+
+async function readAndVerifyBackup(file, password) {
+  if (!(file instanceof Blob) || file.size < 40 || file.size > BACKUP_MAX_BYTES) throw new Error('Yedek dosyası boyutu geçersiz.');
+  let envelope;
+  try { envelope = JSON.parse(await file.text()); }
+  catch (_) { throw new Error('Dosya JSON biçiminde okunamadı.'); }
+  const isV1 = envelope && envelope.format === BACKUP_FORMAT && envelope.version === 1;
+  const isV2 = envelope && envelope.format === BACKUP_FORMAT_V2 && envelope.version === 2;
+  if ((!isV1 && !isV2) || envelope.kdf !== 'PBKDF2-SHA-256') throw new Error('Bu dosya desteklenen bir Bedrock yedeği değil.');
+  const iterations = Number(envelope.iterations);
+  if (!Number.isInteger(iterations) || iterations < 100000 || iterations > 1000000) throw new Error('Yedek şifreleme ayarları geçersiz.');
+  const salt = decodeBackupBase64(envelope.salt, 'Yedek tuzu', 16, 16);
+  const iv = decodeBackupBase64(envelope.iv, 'Yedek IV', 12, 12);
+  const cipher = decodeBackupBase64(envelope.cipher, 'Şifreli yedek içeriği', 16, BACKUP_MAX_BYTES);
+  const key = await derivePasswordWrappingKey(password, salt, iterations);
+  const aad = isV2 ? backupV2AdditionalData(envelope) : BACKUP_FORMAT;
+  const plaintext = await decryptBytes({ iv, cipher }, key, aad);
+  if (plaintext.byteLength > BACKUP_MAX_BYTES) throw new Error('Yedek içeriği izin verilen boyutu aşıyor.');
+  let payload;
+  try { payload = JSON.parse(decoder.decode(plaintext)); }
+  catch (_) { throw new Error('Şifreli yedek içeriği okunamadı.'); }
+  const expectedPayloadFormat = isV2 ? BACKUP_PAYLOAD_FORMAT_V2 : BACKUP_PAYLOAD_FORMAT;
+  const expectedPayloadVersion = isV2 ? 2 : 1;
+  if (!payload || payload.format !== expectedPayloadFormat || payload.version !== expectedPayloadVersion || !Array.isArray(payload.records) || payload.records.length > BACKUP_MAX_RECORDS) {
+    throw new Error('Yedek içeriği geçersiz veya desteklenmiyor.');
+  }
+  const restoredConfig = validateVaultConfigForBackup(payload.vaultConfig);
+  const importedVaultKey = await unwrapVaultKey(restoredConfig, password);
+  const decodedRecords = payload.records.map(validateRecordEnvelopeShape);
+  const integrity = await verifyEncryptedRecordCollection(decodedRecords, importedVaultKey);
+  return {
+    formatVersion: expectedPayloadVersion,
+    exportedAt: Number(payload.exportedAt) || null,
+    decodedRecords,
+    restoredConfig,
+    integrity
+  };
 }
 
 async function restoreEncryptedBackup(event) {
@@ -1459,53 +1602,159 @@ async function restoreEncryptedBackup(event) {
   elements.confirmBackupImport.disabled = true;
   elements.backupImportError.textContent = '';
   try {
-    const envelope = JSON.parse(await pendingBackupFile.text());
-    if (!envelope || envelope.format !== BACKUP_FORMAT || envelope.version !== 1 || envelope.kdf !== 'PBKDF2-SHA-256') {
-      throw new Error('Bu dosya Bedrock yedeği değil veya sürümü desteklenmiyor.');
+    // Fully authenticate the outer backup, the wrapped vault key, every record,
+    // and every media attachment before touching the existing IndexedDB data.
+    const verified = await readAndVerifyBackup(pendingBackupFile, password);
+    if (backupImportMode === 'verify') {
+      closeBackupImport();
+      showToast(`Yedek doğrulandı: ${verified.integrity.recordCount} kayıt, ${verified.integrity.attachmentCount} medya eki. Mevcut kasan değiştirilmedi.`);
+      return;
     }
-    const iterations = Number(envelope.iterations);
-    if (!Number.isInteger(iterations) || iterations < 100000 || iterations > 1000000) throw new Error('Yedek şifreleme ayarları geçersiz.');
-    const key = await derivePasswordWrappingKey(password, base64ToBytes(envelope.salt), iterations);
-    const plaintext = await decryptBytes({ iv: base64ToBytes(envelope.iv), cipher: base64ToBytes(envelope.cipher) }, key, BACKUP_FORMAT);
-    const payload = JSON.parse(decoder.decode(plaintext));
-    if (!payload || payload.format !== BACKUP_PAYLOAD_FORMAT || payload.version !== 1 || !Array.isArray(payload.records) || payload.records.length > 50000) {
-      throw new Error('Yedek içeriği geçersiz.');
-    }
-    const config = payload.vaultConfig;
-    if (!config || config.key !== 'vaultConfig' || config.version !== 1 || config.kdf !== 'PBKDF2-SHA-256' || !config.salt || !config.wrapIv || !config.wrappedKey || !Number.isInteger(config.iterations) || config.iterations < 100000 || config.iterations > 1000000) {
-      throw new Error('Yedekte kasa anahtarı bulunamadı veya şifreleme ayarları geçersiz.');
-    }
-    if (base64ToBytes(config.salt).length !== 16 || base64ToBytes(config.wrapIv).length !== 12 || base64ToBytes(config.wrappedKey).length < 48) {
-      throw new Error('Yedekteki kasa anahtarı verisi bozuk.');
-    }
-    const decodedRecords = payload.records.map(decodeRecordFromBackup);
-    if (!window.confirm(`${decodedRecords.length} kayıt içeren yedek geri yüklenecek. Bu cihazdaki mevcut Bedrock kayıtlarının tamamı silinip yedekteki kayıtlarla değiştirilecek. Devam edilsin mi?`)) return;
-    const restoredConfig = { ...config, biometric: null };
+    const dateText = verified.exportedAt ? new Date(verified.exportedAt).toLocaleString('tr-TR') : 'tarih bilgisi yok';
+    const warning = `${verified.integrity.recordCount} kayıt ve ${verified.integrity.attachmentCount} medya eki içeren yedek doğrulandı (${dateText}).\n\nBu cihazdaki mevcut Bedrock kayıtlarının tamamı silinip yedekteki kayıtlarla değiştirilecek. Devam etmeden önce mevcut kasanın yedeğini aldığından emin ol.\n\nGeri yüklemeye devam edilsin mi?`;
+    if (!window.confirm(warning)) return;
     await new Promise((resolve, reject) => {
       const tx = database.transaction([STORE_NAME, META_STORE], 'readwrite');
       const recordStore = tx.objectStore(STORE_NAME);
       const metaStore = tx.objectStore(META_STORE);
       recordStore.clear();
-      for (const record of decodedRecords) recordStore.put(record);
+      for (const record of verified.decodedRecords) recordStore.put(record);
       metaStore.clear();
-      metaStore.put(restoredConfig);
+      metaStore.put(verified.restoredConfig);
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error || new Error('Yedek geri yüklenemedi.'));
       tx.onabort = () => reject(tx.error || new Error('Yedek geri yüklenemedi.'));
     });
-    vaultConfig = restoredConfig;
+    vaultConfig = verified.restoredConfig;
     clearUnlockedSession();
     setGateMode('unlock');
     closeBackupImport();
-    showToast('Yedek geri yüklendi. Kasanı yedeğin ana parolasıyla aç.');
+    showToast('Yedek geri yüklendi. Kasanı yedeğin ana parolasıyla aç. Biyometrik giriş güvenlik için sıfırlandı.');
   } catch (error) {
-    console.error('Bedrock yedek geri yükleme:', error);
+    console.error('Bedrock yedek doğrulama/geri yükleme:', error);
     elements.backupImportError.textContent = error.name === 'OperationError'
-      ? 'Yedek parolası yanlış veya dosya bozuk.'
-      : (error.message || 'Yedek geri yüklenemedi.');
+      ? 'Parola yanlış veya yedek dosyasının şifreli verisi bozuk.'
+      : (error.message || 'Yedek doğrulanamadı. Mevcut kasa değiştirilmedi.');
   } finally {
     elements.confirmBackupImport.disabled = false;
   }
+}
+
+function openSecurityAudit() {
+  elements.securityAuditResults.replaceChildren();
+  securityAuditReturnToSettings = !elements.settingsModal.hidden;
+  if (securityAuditReturnToSettings) elements.settingsModal.hidden = true;
+  elements.securityAuditModal.hidden = false;
+  document.body.classList.add('modal-open');
+  runSecurityAudit();
+}
+
+function closeSecurityAudit() {
+  elements.securityAuditModal.hidden = true;
+  if (securityAuditReturnToSettings) {
+    elements.settingsModal.hidden = false;
+    securityAuditReturnToSettings = false;
+    document.body.classList.add('modal-open');
+  } else {
+    document.body.classList.remove('modal-open');
+  }
+}
+
+function appendAuditResult(title, detail, passed, type = 'check') {
+  const item = document.createElement('div');
+  item.className = `audit-item ${passed ? 'is-pass' : 'is-fail'}`;
+  const icon = document.createElement('span');
+  icon.className = 'audit-icon';
+  icon.textContent = type === 'info' ? 'i' : (passed ? '✓' : '×');
+  const copy = document.createElement('div');
+  copy.className = 'audit-copy';
+  const heading = document.createElement('strong');
+  heading.textContent = title;
+  const description = document.createElement('p');
+  description.textContent = detail;
+  copy.append(heading, description);
+  item.append(icon, copy);
+  elements.securityAuditResults.append(item);
+}
+
+async function runSecurityAudit() {
+  if (securityAuditRunning) return;
+  securityAuditRunning = true;
+  elements.runSecurityAudit.disabled = true;
+  let passed = 0;
+  let failed = 0;
+  const recordResult = (title, detail, ok, type = 'check') => {
+    appendAuditResult(title, detail, ok, type);
+    if (type !== 'info') ok ? passed += 1 : failed += 1;
+  };
+  try {
+    const secure = window.isSecureContext && Boolean(crypto && crypto.subtle);
+    recordResult('Güvenli bağlantı ve Web Crypto', secure ? 'HTTPS/güvenli bağlam ve Web Crypto API kullanılabilir.' : 'Güvenli bağlam veya Web Crypto API bulunamadı.', secure);
+
+    try {
+      const testRawKey = randomBytes(32);
+      const testKey = await crypto.subtle.importKey('raw', testRawKey, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+      const sample = encoder.encode('Bedrock security self-test');
+      const encrypted = await encryptBytes(sample, testKey, 'bedrock-self-test-v1');
+      const decrypted = await decryptBytes(encrypted, testKey, 'bedrock-self-test-v1');
+      const roundTripOk = decoder.decode(decrypted) === 'Bedrock security self-test';
+      recordResult('AES-GCM şifrele/aç testi', 'Geçici test verisi başarıyla şifrelendi ve çözüldü.', roundTripOk);
+      const tamperedCipher = new Uint8Array(encrypted.cipher.slice(0));
+      tamperedCipher[0] ^= 1;
+      let tamperRejected = false;
+      try { await decryptBytes({ iv: encrypted.iv, cipher: tamperedCipher }, testKey, 'bedrock-self-test-v1'); }
+      catch (_) { tamperRejected = true; }
+      recordResult('Değiştirilmiş veri reddi', tamperRejected ? 'AES-GCM değiştirilmiş şifreli veriyi reddetti.' : 'Değiştirilmiş veri reddedilmedi.', tamperRejected);
+      testRawKey.fill(0);
+    } catch (error) {
+      recordResult('AES-GCM kontrolleri', error.message || 'Kriptografi testi çalıştırılamadı.', false);
+    }
+
+    try {
+      const config = await getMeta('vaultConfig');
+      const configOk = Boolean(config && config.key === 'vaultConfig' && config.kdf === 'PBKDF2-SHA-256' && vaultCryptoKey);
+      recordResult('Kasa anahtarı ayarları', configOk ? `Kasa ayarı mevcut; PBKDF2 yineleme sayısı: ${config.iterations}.` : 'Kasa ayarı eksik veya oturum anahtarı yok.', configOk);
+    } catch (error) {
+      recordResult('Kasa anahtarı ayarları', error.message || 'Kasa ayarı okunamadı.', false);
+    }
+
+    try {
+      const stored = await storeRequest('readonly', store => store.getAll());
+      const integrity = await verifyEncryptedRecordCollection(stored, vaultCryptoKey);
+      recordResult('Yerel kayıt bütünlüğü', `${integrity.recordCount} kayıt ve ${integrity.attachmentCount} medya eki başarıyla doğrulandı.`, true);
+    } catch (error) {
+      recordResult('Yerel kayıt bütünlüğü', error.message || 'Bir veya daha fazla kayıt doğrulanamadı.', false);
+    }
+
+    if (navigator.storage && navigator.storage.estimate) {
+      try {
+        const estimate = await navigator.storage.estimate();
+        const used = Number(estimate.usage) || 0;
+        const quota = Number(estimate.quota) || 0;
+        const detail = quota ? `Yaklaşık ${formatBytes(used)} kullanılıyor; tahmini sınır ${formatBytes(quota)}.` : `Yaklaşık ${formatBytes(used)} kullanılıyor.`;
+        recordResult('Cihaz depolama durumu', detail, true, 'info');
+      } catch (_) {
+        recordResult('Cihaz depolama durumu', 'Tarayıcı depolama tahmini vermedi.', true, 'info');
+      }
+    } else {
+      recordResult('Cihaz depolama durumu', 'Bu tarayıcı depolama tahmini API’sini sunmuyor.', true, 'info');
+    }
+
+    const summary = document.createElement('p');
+    summary.className = `audit-summary ${failed ? 'has-failures' : 'all-passed'}`;
+    summary.textContent = failed ? `${passed} kontrol başarılı, ${failed} kontrol başarısız. Başarısız sonuçları düzeltmeden yedeğe güvenme.` : `${passed} güvenlik kontrolü başarılı. Bu sonuç bağımsız profesyonel güvenlik denetimi değildir.`;
+    elements.securityAuditResults.prepend(summary);
+  } finally {
+    securityAuditRunning = false;
+    elements.runSecurityAudit.disabled = false;
+  }
+}
+
+function formatBytes(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  const tier = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  return `${(bytes / Math.pow(1024, tier)).toFixed(tier ? 1 : 0)} ${units[tier]}`;
 }
 
 async function optimizePhotoBlob(file) {
@@ -2013,8 +2262,13 @@ function initEvents() {
     if (record) openPasswordEditor(record);
   });
   document.getElementById('exportBackupButton').addEventListener('click', openBackupExport);
-  document.getElementById('importBackupButton').addEventListener('click', chooseBackupFile);
-  elements.gateRestoreBackup.addEventListener('click', chooseBackupFile);
+  document.getElementById('importBackupButton').addEventListener('click', () => chooseBackupFile('restore'));
+  elements.verifyBackup.addEventListener('click', () => chooseBackupFile('verify'));
+  elements.runSecurityAudit.addEventListener('click', openSecurityAudit);
+  document.getElementById('closeSecurityAuditButton').addEventListener('click', closeSecurityAudit);
+  document.getElementById('closeSecurityAuditFooter').addEventListener('click', closeSecurityAudit);
+  elements.securityAuditModal.addEventListener('click', event => { if (event.target === elements.securityAuditModal) closeSecurityAudit(); });
+  elements.gateRestoreBackup.addEventListener('click', () => chooseBackupFile('restore'));
   elements.backupFileInput.addEventListener('change', handleBackupFileChosen);
   elements.backupExportForm.addEventListener('submit', handleBackupExport);
   elements.backupImportForm.addEventListener('submit', restoreEncryptedBackup);
@@ -2088,6 +2342,7 @@ function initEvents() {
       if (!elements.passwordDetailModal.hidden) closePasswordDetails();
       if (!elements.backupExportModal.hidden) closeBackupExport();
       if (!elements.backupImportModal.hidden) closeBackupImport();
+      if (!elements.securityAuditModal.hidden) closeSecurityAudit();
     }
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
       event.preventDefault();

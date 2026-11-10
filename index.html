@@ -317,7 +317,7 @@
     <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="backupImportTitle">
       <div class="modal-topline"><span class="modal-kicker">YEDEKTEN GERİ YÜKLE</span><button class="icon-button close-backup-import" type="button" aria-label="Kapat">×</button></div>
       <h2 id="backupImportTitle">Yedeği aç.</h2>
-      <p class="modal-subtitle" id="backupImportFileName">Seçilen Bedrock yedeği</p>
+      <p class="modal-subtitle" id="backupImportIntro">Yedek açılmadan önce tüm kayıtlar ve ekler doğrulanır. Geri yükleme mevcut kasanın yerine geçer.</p><p class="field-hint" id="backupImportFileName">Seçilen Bedrock yedeği</p>
       <form id="backupImportForm">
         <label class="field-label" for="backupImportPassword">Yedek oluşturulurken kullanılan ana parola</label>
         <input class="text-field" id="backupImportPassword" type="password" autocomplete="current-password" required>
@@ -348,10 +348,24 @@
       <div class="security-status-row"><span class="security-status-icon">↧</span><div><strong>Şifreli yedekleme</strong><p>Notları, parolaları, fotoğrafları ve ses kayıtlarını tek dosyada koru.</p></div></div>
       <button class="button-secondary settings-action" id="exportBackupButton" type="button">Şifreli yedek oluştur</button>
       <button class="button-secondary settings-action" id="importBackupButton" type="button">Şifreli yedekten geri yükle</button>
-      <p class="security-footnote">Yedek dosyası ayrıca ana parolanla şifrelenir. Dosyayı ve parolanı ayrı yerlerde güvenle sakla.</p>
+      <button class="button-secondary settings-action" id="verifyBackupButton" type="button">Yedek dosyasını doğrula</button>
+      <p class="security-footnote">Yedek dosyası ayrıca ana parolanla şifrelenir. Dosyayı ve parolanı ayrı yerlerde güvenle sakla. Doğrulama işlemi mevcut kasayı değiştirmez.</p>
+      <div class="settings-divider"></div>
+      <div class="security-status-row"><span class="security-status-icon">✓</span><div><strong>Güvenlik kontrolleri</strong><p>Şifreleme testi, değiştirilmiş veri reddi ve kayıt bütünlüğü kontrolü.</p></div></div>
+      <button class="button-secondary settings-action" id="runSecurityAuditButton" type="button">Güvenlik testlerini çalıştır</button>
       <div class="settings-divider"></div>
       <button class="button-primary settings-action lock-action" id="lockNowButton" type="button">Şimdi kilitle</button>
       <p class="security-footnote">Biyometrik açma yalnızca cihaz ve tarayıcı WebAuthn PRF desteği sunarsa kullanılabilir. Destek yoksa ana parola ile giriş yaparsın.</p>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" id="securityAuditModal" hidden>
+    <section class="modal-card security-audit-modal" role="dialog" aria-modal="true" aria-labelledby="securityAuditTitle">
+      <div class="modal-topline"><span class="modal-kicker">BEDROCK v0.8 · GÜVENLİK</span><button class="icon-button" id="closeSecurityAuditButton" type="button" aria-label="Kapat">×</button></div>
+      <h2 id="securityAuditTitle">Güvenlik kontrolü.</h2>
+      <p class="modal-subtitle">Bu testler temel çalışma ve veri bütünlüğü kontrolleridir; bağımsız güvenlik denetiminin yerine geçmez.</p>
+      <div class="audit-results" id="securityAuditResults" aria-live="polite"><p class="field-hint">Kontroller çalıştırılıyor…</p></div>
+      <div class="form-actions"><button class="button-primary" id="closeSecurityAuditFooter" type="button">Kapat</button></div>
     </section>
   </div>
 
