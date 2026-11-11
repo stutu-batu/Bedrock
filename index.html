@@ -183,7 +183,21 @@
     </nav>
   </div>
 
-  <input id="photoInput" class="visually-hidden" type="file" accept="image/*" capture="environment" aria-label="Fotoğraf seç veya çek">
+  <input id="photoCameraInput" class="visually-hidden" type="file" accept="image/*" capture="environment" aria-label="Kamerayla fotoğraf çek">
+  <input id="photoGalleryInput" class="visually-hidden" type="file" accept="image/*" multiple aria-label="Galeriden fotoğraf seç">
+
+  <div class="modal-backdrop" id="photoSourceModal" hidden>
+    <section class="modal-card photo-source-card" role="dialog" aria-modal="true" aria-labelledby="photoSourceTitle">
+      <div class="modal-topline"><span class="modal-kicker">FOTOĞRAF EKLE</span><button class="icon-button" id="closePhotoSourceButton" type="button" aria-label="Kapat">×</button></div>
+      <h2 id="photoSourceTitle">Fotoğrafı nereden ekleyelim?</h2>
+      <p class="modal-subtitle">Kameranı açabilir veya galerindeki fotoğrafları seçebilirsin.</p>
+      <div class="photo-source-actions">
+        <button class="photo-source-option" id="choosePhotoCameraButton" type="button"><span class="photo-source-icon">◉</span><span><strong>Kamerayı aç</strong><small>Yeni fotoğraf çek</small></span><span class="photo-source-arrow">›</span></button>
+        <button class="photo-source-option" id="choosePhotoGalleryButton" type="button"><span class="photo-source-icon">▧</span><span><strong>Galeriden seç</strong><small>Telefondaki fotoğrafları kullan</small></span><span class="photo-source-arrow">›</span></button>
+      </div>
+      <div class="form-actions"><button class="button-secondary" id="cancelPhotoSourceButton" type="button">Vazgeç</button></div>
+    </section>
+  </div>
 
   <div class="modal-backdrop" id="audioModal" hidden>
     <section class="modal-card media-modal" role="dialog" aria-modal="true" aria-labelledby="audioModalTitle">
@@ -248,6 +262,14 @@
         <label class="field-label" for="noteTags">Etiketler (virgülle ayır)</label>
         <input class="text-field" id="noteTags" maxlength="350" placeholder="Örn. Ev, Önemli, Elektronik">
         <p class="field-hint">En fazla 12 etiket ekleyebilirsin.</p>
+        <div class="note-attachment-editor">
+          <div class="note-attachment-heading">
+            <div><strong>Fotoğraf ekleri</strong><p id="noteAttachmentCount">Bu kayda henüz fotoğraf eklenmedi.</p></div>
+            <button class="button-secondary add-note-photo-button" id="addPhotoToNoteButton" type="button">＋ Fotoğraf ekle</button>
+          </div>
+          <div class="note-attachment-preview" id="noteAttachmentPreview" hidden></div>
+          <p class="field-hint">Sonradan da fotoğraf ekleyebilirsin. Eklediklerini kayda bağlamak için notu kaydet.</p>
+        </div>
         <div class="reminder-field-group">
           <label class="field-label" for="noteReminderAt">⏰ Hatırlatma zamanı (isteğe bağlı)</label>
           <input class="text-field" id="noteReminderAt" type="datetime-local" step="60">
@@ -339,7 +361,23 @@
       <div class="security-status-row"><span class="security-status-icon">◉</span><div><strong>Biyometrik hızlı açma</strong><p id="biometricStatus">Kapalı. Ana parola her açılışta kullanılacak.</p></div></div>
       <button class="button-secondary settings-action" id="enableBiometricButton" type="button">Biyometrik kilidi etkinleştir</button>
       <button class="button-secondary settings-action" id="disableBiometricButton" type="button" hidden>Biyometrik kilidi kapat</button>
+      <div class="security-status-row auto-biometric-row"><span class="security-status-icon">↗</span><div><strong>Uygulama açılınca otomatik biyometrik giriş</strong><p id="autoBiometricHelp">Etkinleştirmek için önce biyometrik kilidi kur.</p></div><label class="switch-control" for="autoBiometricUnlockToggle"><input type="checkbox" id="autoBiometricUnlockToggle" disabled><span class="switch-track" aria-hidden="true"></span></label></div>
+      <p class="field-hint">Bazı Android tarayıcıları otomatik doğrulama yerine ilk dokunuşu isteyebilir. Böyle bir durumda kilit ekranındaki biyometrik düğme kullanılabilir.</p>
       <button class="button-secondary settings-action" id="openChangePasswordButton" type="button">Ana parolayı değiştir</button>
+      <div class="settings-divider"></div>
+      <div class="appearance-settings">
+        <div class="appearance-heading"><span class="security-status-icon">✦</span><div><strong>Görünümünü özelleştir</strong><p>Bedrock'un renklerini ve ekran yoğunluğunu değiştir.</p></div></div>
+        <label class="appearance-field">Tema
+          <select class="text-field select-field" id="appearanceTheme"><option value="dark">Koyu tema</option><option value="light">Açık tema</option></select>
+        </label>
+        <label class="appearance-field">Vurgu rengi
+          <select class="text-field select-field" id="appearanceAccent"><option value="green">Taş yeşili</option><option value="purple">Mor</option><option value="blue">Mavi</option><option value="amber">Kehribar</option></select>
+        </label>
+        <label class="appearance-field">Ekran düzeni
+          <select class="text-field select-field" id="appearanceDensity"><option value="comfortable">Rahat</option><option value="compact">Kompakt</option></select>
+        </label>
+        <p class="field-hint">Görünüm tercihleri yalnızca bu cihazda saklanır; notlarının şifreleme ayarlarını değiştirmez.</p>
+      </div>
       <div class="settings-divider"></div>
       <div class="security-status-row"><span class="security-status-icon">◷</span><div><strong>Hatırlatma bildirimleri</strong><p id="notificationsStatus">Bildirim izni henüz verilmedi.</p></div></div>
       <button class="button-secondary settings-action" id="enableNotificationsButton" type="button">Hatırlatma bildirimlerini etkinleştir</button>

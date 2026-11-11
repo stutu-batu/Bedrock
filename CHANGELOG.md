@@ -1,18 +1,21 @@
-# Bedrock sürüm notları
+# Bedrock v0.9.0
 
-## v0.8.0
+## Görünüm ve kullanım iyileştirmeleri
+- Koyu/açık tema, vurgu rengi ve kompakt/rahat ekran düzeni eklendi.
+- Tercihler cihazda tutulur; kasa kayıtlarının şifrelemesini değiştirmez.
+- Ana sayfanın sağındaki dikey kaydırma çubuğu gizlendi; kaydırma davranışı korunur.
 
-- Yeni yedek biçimi v2 eklendi. Dış yedek başlığındaki sürüm/KDF/yineleme bilgileri AES-GCM ek doğrulama verisine bağlandı.
-- v0.7 `bedrock-backup-v1` dosyaları geri yüklenmeye devam eder.
-- Yedek geri yüklemeden önce kasa anahtarı açılır; her kayıt metaverisi ve her fotoğraf/ses eki tek tek doğrulanır.
-- Bozuk, değiştirilmiş, yinelenen kimlikli veya biçimi geçersiz kayıtları veritabanına yazmadan reddetme.
-- Geri yükleme, tüm doğrulamalar tamamlandıktan sonra tek bir IndexedDB readwrite transaction içinde yapılır.
-- `Yedek dosyasını doğrula` modu eklendi. Dosyayı kontrol eder ancak mevcut kasayı değiştirmez.
-- Ayarlara AES-GCM round-trip, değiştirilmiş şifreli verinin reddi, kasa ayarı ve yerel kayıt/ek bütünlüğü testleri eklendi.
-- Düşük belleğe sahip telefonlarda medya doğrulaması tek ek üzerinden yürütülür; tüm açılmış medyalar bellekte biriktirilmez.
-- Node.js bağımlılıksız geliştirici testleri eklendi: v2/v1 içe aktarma, yanlış parola, bozuk kayıt/ek, KDF başlığı değişikliği ve yinelenen kimlik senaryoları.
-- Service Worker önbelleği `bedrock-shell-v8-0` olarak yenilendi.
+## Fotoğraf akışı
+- Fotoğraf eklerken önce Kamera veya Galeri seçimi gösterilir.
+- Bir not/eşya kaydı düzenlenirken sonradan birden fazla fotoğraf eklenebilir.
+- Yeni fotoğraflar notun Kaydet düğmesine basılınca şifreli biçimde kayda eklenir.
 
-## Güvenlik sınırları
+## Biyometrik açılış
+- Ayarlara, uygulama açıldığında otomatik biyometrik doğrulama başlatma tercihi eklendi.
+- Bu seçenek yalnızca biyometrik hızlı açma kurulmuşsa kullanılabilir.
+- Bazı tarayıcılar WebAuthn için kullanıcı dokunuşu isteyebilir; manuel biyometrik düğme ve ana parola yedeği korunur.
 
-Bu kontroller uygulama içi temel bütünlük ve şifreleme testleridir. Bağımsız sızma testi, kaynak kodu denetimi veya profesyonel kriptografik inceleme değildir. Ana parolanı kaybedersen kurtarma anahtarı yoktur. Yedek dosyasını ana paroladan ayrı ve güvenli bir yerde sakla.
+## Veri ve yükseltme
+- IndexedDB şeması değiştirilmedi.
+- Mevcut v0.8 kayıtları ve şifreli yedek biçimleri korunur.
+- Biyometrik otomatik giriş tercihi cihaza özgüdür ve yedeğe aktarılmaz.

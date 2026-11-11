@@ -18,7 +18,7 @@ const BACKUP_MAX_BYTES = 100 * 1024 * 1024;
 const BACKUP_MAX_RECORDS = 50000;
 const BACKUP_MAX_ATTACHMENTS_PER_RECORD = 250;
 const BACKUP_MAX_METADATA_BYTES = 2 * 1024 * 1024;
-const APP_VERSION = '0.8.0';
+const APP_VERSION = '0.9.0';
 const MAX_IMAGE_EDGE = 1600;
 const IMAGE_JPEG_QUALITY = 0.82;
 
@@ -53,7 +53,12 @@ const elements = {
   saveButton: document.getElementById('saveNoteButton'),
   audioModal: document.getElementById('audioModal'),
   photoModal: document.getElementById('photoModal'),
-  photoInput: document.getElementById('photoInput'),
+  photoCameraInput: document.getElementById('photoCameraInput'),
+  photoGalleryInput: document.getElementById('photoGalleryInput'),
+  photoSourceModal: document.getElementById('photoSourceModal'),
+  noteAttachmentCount: document.getElementById('noteAttachmentCount'),
+  noteAttachmentPreview: document.getElementById('noteAttachmentPreview'),
+  addPhotoToNote: document.getElementById('addPhotoToNoteButton'),
   audioTitle: document.getElementById('audioTitle'),
   audioDescription: document.getElementById('audioDescription'),
   audioPreview: document.getElementById('audioPreview'),
@@ -81,6 +86,11 @@ const elements = {
   gateBiometric: document.getElementById('gateBiometricButton'),
   settingsModal: document.getElementById('settingsModal'),
   biometricStatus: document.getElementById('biometricStatus'),
+  autoBiometricToggle: document.getElementById('autoBiometricUnlockToggle'),
+  autoBiometricHelp: document.getElementById('autoBiometricHelp'),
+  appearanceTheme: document.getElementById('appearanceTheme'),
+  appearanceAccent: document.getElementById('appearanceAccent'),
+  appearanceDensity: document.getElementById('appearanceDensity'),
   notificationsStatus: document.getElementById('notificationsStatus'),
   enableNotifications: document.getElementById('enableNotificationsButton'),
   enableBiometric: document.getElementById('enableBiometricButton'),
@@ -142,6 +152,21 @@ let recordingInterval = null;
 let recordingLimitTimeout = null;
 let pendingPhotoBlob = null;
 let pendingPhotoUrl = null;
+let pendingNotePhotoAttachments = [];
+let pendingNotePhotoPreviewUrls = [];
+let noteEditorSession = 0;
+let notePhotoProcessing = false;
+let photoPickerTarget = 'new';
+let autoBiometricAttempted = false;
+let autoBiometricAttemptToken = 0;
+let biometricUnlockInProgress = false;
+const APPEARANCE_STORAGE_KEY = 'bedrock-appearance-v1';
+const ACCENT_PALETTE = {
+  green: { main: '#c6ee87', secondary: '#a9d76a' },
+  purple: { main: '#c7a6ff', secondary: '#ab85f0' },
+  blue: { main: '#87cfff', secondary: '#62afea' },
+  amber: { main: '#f1c878', secondary: '#dca94d' }
+};
 let vaultConfig = null;
 let vaultCryptoKey = null;
 let gateMode = 'setup';
@@ -437,6 +462,7 @@ async function makeVaultConfig(password, rawVaultKey) {
     wrapIv: bytesToBase64(wrapped.iv),
     wrappedKey: bytesToBase64(new Uint8Array(wrapped.cipher)),
     biometric: null,
+    autoBiometricUnlock: false,
     createdAt: Date.now()
   };
 }
@@ -490,7 +516,21 @@ function setGateMode(mode) {
     elements.gateSubtitle.textContent = 'Kayıtlarını açmak için ana parolanı gir.';
     elements.gateSubmit.textContent = 'Kasayı aç';
   }
-  window.setTimeout(() => elements.gatePassword.focus(), 80);
+  if (!(mode === 'unlock' && vaultConfig && vaultConfig.biometric && vaultConfig.autoBiometricUnlock)) {
+    window.setTimeout(() => elements.gatePassword.focus(), 80);
+  }
+  if (mode === 'unlock') scheduleAutomaticBiometricUnlock();
+}
+
+function scheduleAutomaticBiometricUnlock() {
+  const token = ++autoBiometricAttemptToken;
+  autoBiometricAttempted = false;
+  if (!vaultConfig || !vaultConfig.biometric || !vaultConfig.autoBiometricUnlock) return;
+  window.setTimeout(() => {
+    if (token !== autoBiometricAttemptToken || autoBiometricAttempted || gateMode !== 'unlock' || elements.gate.hidden || document.hidden) return;
+    autoBiometricAttempted = true;
+    unlockWithBiometric({ automatic: true });
+  }, 650);
 }
 
 async function unlockWithPassword(password) {
@@ -530,14 +570,63 @@ async function setupVault(password) {
   }
 }
 
+function readAppearancePreferences() {
+  const defaults = { theme: 'dark', accent: 'green', density: 'comfortable' };
+  try {
+    const stored = JSON.parse(localStorage.getItem(APPEARANCE_STORAGE_KEY) || '{}');
+    return {
+      theme: stored.theme === 'light' ? 'light' : 'dark',
+      accent: ACCENT_PALETTE[stored.accent] ? stored.accent : 'green',
+      density: stored.density === 'compact' ? 'compact' : 'comfortable'
+    };
+  } catch (_) { return defaults; }
+}
+
+function applyAppearancePreferences(preferences = readAppearancePreferences()) {
+  const root = document.documentElement;
+  const palette = ACCENT_PALETTE[preferences.accent] || ACCENT_PALETTE.green;
+  root.dataset.theme = preferences.theme === 'light' ? 'light' : 'dark';
+  root.dataset.density = preferences.density === 'compact' ? 'compact' : 'comfortable';
+  root.dataset.accent = preferences.accent in ACCENT_PALETTE ? preferences.accent : 'green';
+  root.style.setProperty('--accent', palette.main);
+  root.style.setProperty('--accent-2', palette.secondary);
+  const themeMeta = document.querySelector('meta[name="theme-color"]');
+  if (themeMeta) themeMeta.content = preferences.theme === 'light' ? '#f3f5f7' : '#11151b';
+  if (elements.appearanceTheme) elements.appearanceTheme.value = root.dataset.theme;
+  if (elements.appearanceAccent) elements.appearanceAccent.value = root.dataset.accent;
+  if (elements.appearanceDensity) elements.appearanceDensity.value = root.dataset.density;
+}
+
+function saveAppearancePreferences() {
+  const preferences = {
+    theme: elements.appearanceTheme.value === 'light' ? 'light' : 'dark',
+    accent: ACCENT_PALETTE[elements.appearanceAccent.value] ? elements.appearanceAccent.value : 'green',
+    density: elements.appearanceDensity.value === 'compact' ? 'compact' : 'comfortable'
+  };
+  try {
+    localStorage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify(preferences));
+    applyAppearancePreferences(preferences);
+    showToast('Görünüm ayarları kaydedildi.');
+  } catch (_) {
+    applyAppearancePreferences(preferences);
+    showToast('Görünüm uygulandı ancak tarayıcı tercihi kaydedemedi.');
+  }
+}
+
 function updateBiometricSettings() {
   const enabled = Boolean(vaultConfig && vaultConfig.biometric);
+  const autoEnabled = Boolean(enabled && vaultConfig.autoBiometricUnlock);
   elements.biometricStatus.textContent = enabled
     ? 'Bu cihazda biyometrik hızlı açma etkin.'
     : 'Kapalı. Ana parola her açılışta kullanılacak.';
   elements.enableBiometric.hidden = enabled;
   elements.disableBiometric.hidden = !enabled;
   elements.gateBiometric.hidden = !enabled || !document.body.classList.contains('vault-locked');
+  elements.autoBiometricToggle.checked = autoEnabled;
+  elements.autoBiometricToggle.disabled = !enabled;
+  elements.autoBiometricHelp.textContent = enabled
+    ? 'Bedrock açıldığında cihaz doğrulamasını otomatik başlat.'
+    : 'Etkinleştirmek için önce biyometrik kilidi kur.';
 }
 
 function bytesFromExtension(value) {
@@ -629,10 +718,12 @@ async function enableBiometricUnlock() {
   }
 }
 
-async function unlockWithBiometric() {
-  if (!vaultConfig || !vaultConfig.biometric) return;
+async function unlockWithBiometric(options = {}) {
+  const automatic = Boolean(options && options.automatic === true);
+  if (!vaultConfig || !vaultConfig.biometric || biometricUnlockInProgress) return;
+  biometricUnlockInProgress = true;
   elements.gateBiometric.disabled = true;
-  elements.gateError.textContent = 'Cihaz doğrulaması bekleniyor…';
+  elements.gateError.textContent = automatic ? 'Otomatik biyometrik doğrulama başlatılıyor…' : 'Cihaz doğrulaması bekleniyor…';
   try {
     const biometric = vaultConfig.biometric;
     const prfSalt = base64ToBytes(biometric.prfSalt);
@@ -659,8 +750,11 @@ async function unlockWithBiometric() {
     }
   } catch (error) {
     vaultCryptoKey = null;
-    elements.gateError.textContent = error.message || 'Biyometrik doğrulama başarısız. Ana parolanı kullan.';
+    elements.gateError.textContent = automatic
+      ? 'Otomatik biyometrik giriş başlatılamadı. Parmak izi düğmesine dokunabilir veya ana parolanı girebilirsin.'
+      : (error.message || 'Biyometrik doğrulama başarısız. Ana parolanı kullan.');
   } finally {
+    biometricUnlockInProgress = false;
     elements.gateBiometric.disabled = false;
   }
 }
@@ -712,6 +806,7 @@ function clearUnlockedSession() {
   elements.count.textContent = 'KİLİTLİ';
   elements.allCount.textContent = '0';
   elements.form.reset();
+  clearNotePhotoDraft();
   elements.modal.hidden = true;
   elements.audioModal.hidden = true;
   elements.photoModal.hidden = true;
@@ -1172,7 +1267,45 @@ function showToast(message) {
   toastTimeout = window.setTimeout(() => elements.toast.classList.remove('show'), 3000);
 }
 
+function clearNotePhotoDraft() {
+  noteEditorSession += 1;
+  notePhotoProcessing = false;
+  elements.addPhotoToNote.disabled = false;
+  elements.saveButton.disabled = false;
+  for (const url of pendingNotePhotoPreviewUrls) URL.revokeObjectURL(url);
+  pendingNotePhotoPreviewUrls = [];
+  pendingNotePhotoAttachments = [];
+  elements.noteAttachmentPreview.replaceChildren();
+  elements.noteAttachmentPreview.hidden = true;
+  elements.noteAttachmentCount.textContent = 'Bu kayda henüz fotoğraf eklenmedi.';
+}
+
+function renderNotePhotoDraft(record = null) {
+  for (const url of pendingNotePhotoPreviewUrls) URL.revokeObjectURL(url);
+  pendingNotePhotoPreviewUrls = [];
+  elements.noteAttachmentPreview.replaceChildren();
+  const savedImages = (record && Array.isArray(record.attachments) ? record.attachments : []).filter(item => item.kind === 'image');
+  const savedAudio = (record && Array.isArray(record.attachments) ? record.attachments : []).filter(item => item.kind === 'audio');
+  const totalImages = savedImages.length + pendingNotePhotoAttachments.length;
+  elements.noteAttachmentCount.textContent = `${savedImages.length} kayıtlı fotoğraf${savedAudio.length ? ` · ${savedAudio.length} ses kaydı` : ''}${pendingNotePhotoAttachments.length ? ` · ${pendingNotePhotoAttachments.length} yeni fotoğraf (kaydetmen gerekiyor)` : ''}`;
+  elements.noteAttachmentPreview.hidden = totalImages === 0;
+  for (const attachment of [...savedImages, ...pendingNotePhotoAttachments]) {
+    const url = URL.createObjectURL(attachment.blob);
+    pendingNotePhotoPreviewUrls.push(url);
+    const item = document.createElement('div');
+    item.className = 'note-attachment-thumb';
+    const image = document.createElement('img');
+    image.src = url;
+    image.alt = attachment.name || 'Fotoğraf eki';
+    const label = document.createElement('span');
+    label.textContent = attachment.name || 'Fotoğraf';
+    item.append(image, label);
+    elements.noteAttachmentPreview.append(item);
+  }
+}
+
 function openEditor(record = null, forcedCategory = null) {
+  clearNotePhotoDraft();
   editingId = record ? record.id : null;
   elements.form.reset();
   elements.modalTitle.textContent = record ? 'Kaydını düzenle.' : 'Aklında kalmasın.';
@@ -1181,6 +1314,7 @@ function openEditor(record = null, forcedCategory = null) {
   elements.body.value = record ? record.body : '';
   elements.noteTags.value = tagsToInput(record ? record.tags : []);
   elements.noteReminder.value = record && record.reminderAt ? toDateTimeLocal(record.reminderAt) : '';
+  renderNotePhotoDraft(record);
   elements.modal.hidden = false;
   document.body.classList.add('modal-open');
   window.setTimeout(() => elements.title.focus(), 40);
@@ -1188,8 +1322,9 @@ function openEditor(record = null, forcedCategory = null) {
 
 function closeEditor() {
   elements.modal.hidden = true;
-  document.body.classList.remove('modal-open');
+  if (elements.photoSourceModal.hidden && elements.photoModal.hidden) document.body.classList.remove('modal-open');
   editingId = null;
+  clearNotePhotoDraft();
 }
 
 function openPasswordEditor(record = null) {
@@ -1406,7 +1541,7 @@ function validateVaultConfigForBackup(config) {
   const wrapIv = decodeBackupBase64(config.wrapIv, 'Kasa anahtarı IV', 12, 12);
   const wrappedKey = decodeBackupBase64(config.wrappedKey, 'Şifreli kasa anahtarı', 48, 256);
   if (salt.length !== 16 || wrapIv.length !== 12 || wrappedKey.length < 48) throw new Error('Yedekteki kasa anahtarı verisi bozuk.');
-  return { ...config, biometric: null };
+  return { ...config, biometric: null, autoBiometricUnlock: false };
 }
 
 async function verifyEncryptedRecordCollection(encryptedRecords, key) {
@@ -1463,7 +1598,7 @@ async function createEncryptedBackup(password) {
     version: 2,
     appVersion: APP_VERSION,
     exportedAt: Date.now(),
-    vaultConfig: { ...vaultConfig, biometric: null },
+    vaultConfig: { ...vaultConfig, biometric: null, autoBiometricUnlock: false },
     records: storedRecords.map(encodeRecordForBackup)
   };
   const plaintext = encoder.encode(JSON.stringify(payload));
@@ -1785,6 +1920,7 @@ async function optimizePhotoBlob(file) {
 
 async function saveRecord(event) {
   event.preventDefault();
+  if (notePhotoProcessing) { showToast('Fotoğraflar hazırlanıyor. Kaydetmeden önce tamamlanmasını bekle.'); return; }
   const title = elements.title.value.trim();
   const body = elements.body.value.trim();
   const category = elements.category.value;
@@ -1817,7 +1953,7 @@ async function saveRecord(event) {
     archivedAt: existing ? (existing.archivedAt || null) : null,
     reminderAt,
     reminderNotifiedAt: existing && existing.reminderAt === reminderAt ? (existing.reminderNotifiedAt || null) : null,
-    attachments: existing && Array.isArray(existing.attachments) ? existing.attachments : [],
+    attachments: [...(existing && Array.isArray(existing.attachments) ? existing.attachments : []), ...pendingNotePhotoAttachments],
     createdAt: existing ? existing.createdAt : now,
     updatedAt: now
   };
@@ -2127,36 +2263,86 @@ async function saveAudioRecording() {
   }
 }
 
-function openPhotoPicker() {
-  elements.photoInput.value = '';
-  elements.photoInput.click();
+function openPhotoPicker(target = 'new') {
+  photoPickerTarget = target;
+  elements.photoSourceModal.hidden = false;
+  document.body.classList.add('modal-open');
 }
 
-function closePhotoModal() {
-  elements.photoModal.hidden = true;
-  document.body.classList.remove('modal-open');
-  if (pendingPhotoUrl) URL.revokeObjectURL(pendingPhotoUrl);
-  pendingPhotoUrl = null;
-  pendingPhotoBlob = null;
-  elements.photoPreview.removeAttribute('src');
-  elements.photoTitle.value = '';
-  elements.photoDescription.value = '';
-  elements.photoTags.value = '';
-  elements.photoCategory.value = 'object';
-  elements.savePhoto.disabled = false;
+function closePhotoSourcePicker() {
+  elements.photoSourceModal.hidden = true;
+  if (elements.modal.hidden && elements.photoModal.hidden) document.body.classList.remove('modal-open');
 }
 
-function handlePhotoSelected(event) {
-  const file = event.target.files && event.target.files[0];
-  if (!file) return;
-  if (!file.type.startsWith('image/')) {
-    showToast('Lütfen bir fotoğraf dosyası seç.');
-    return;
+function choosePhotoSource(source) {
+  closePhotoSourcePicker();
+  const input = source === 'camera' ? elements.photoCameraInput : elements.photoGalleryInput;
+  if (source === 'gallery') input.multiple = photoPickerTarget === 'note';
+  input.value = '';
+  input.click();
+}
+
+function validatePhotoFile(file) {
+  if (!file || !file.type.startsWith('image/')) {
+    showToast('Yalnızca fotoğraf dosyaları eklenebilir.');
+    return false;
   }
   if (file.size > MAX_PHOTO_BYTES) {
     showToast('Fotoğraf 18 MB sınırını aşıyor. Daha küçük bir fotoğraf seç.');
+    return false;
+  }
+  return true;
+}
+
+async function handlePhotosForNote(files) {
+  const validFiles = Array.from(files || []).filter(validatePhotoFile);
+  if (!validFiles.length || notePhotoProcessing) return;
+  const session = noteEditorSession;
+  const maxCount = 250;
+  const existingCount = (editingId ? records.find(item => item.id === editingId)?.attachments || [] : []).length;
+  if (existingCount + pendingNotePhotoAttachments.length + validFiles.length > maxCount) {
+    showToast('Bir kayda en fazla 250 medya eki eklenebilir.');
     return;
   }
+  notePhotoProcessing = true;
+  elements.addPhotoToNote.disabled = true;
+  elements.saveButton.disabled = true;
+  try {
+    for (const file of validFiles) {
+      const optimizedPhoto = await optimizePhotoBlob(file);
+      if (session !== noteEditorSession) return;
+      const extension = (optimizedPhoto.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
+      pendingNotePhotoAttachments.push({
+        id: makeId(), kind: 'image', name: `Fotoğraf-${new Date().toISOString().slice(0, 10)}.${extension}`,
+        mimeType: optimizedPhoto.type || file.type, blob: optimizedPhoto, createdAt: Date.now()
+      });
+    }
+    if (session !== noteEditorSession) return;
+    const existing = editingId ? records.find(item => item.id === editingId) : null;
+    renderNotePhotoDraft(existing);
+    showToast(`${validFiles.length} fotoğraf nota eklendi. Kalıcı olması için Kaydet'e bas.`);
+  } catch (error) {
+    if (session === noteEditorSession) showToast(storageErrorMessage(error));
+  } finally {
+    if (session === noteEditorSession) {
+      notePhotoProcessing = false;
+      elements.addPhotoToNote.disabled = false;
+      elements.saveButton.disabled = false;
+    }
+  }
+}
+
+function handlePhotoSelected(event) {
+  const files = Array.from(event.target.files || []);
+  if (!files.length) return;
+  if (photoPickerTarget === 'note') {
+    handlePhotosForNote(files);
+    event.target.value = '';
+    return;
+  }
+  const file = files[0];
+  event.target.value = '';
+  if (!validatePhotoFile(file)) return;
   pendingPhotoBlob = file;
   pendingPhotoUrl = URL.createObjectURL(file);
   elements.photoPreview.src = pendingPhotoUrl;
@@ -2195,7 +2381,7 @@ function initEvents() {
   document.getElementById('newObjectButton').addEventListener('click', () => openEditor(null, 'object'));
   document.getElementById('newPasswordButton').addEventListener('click', () => openPasswordEditor());
   document.getElementById('newAudioButton').addEventListener('click', openAudioModal);
-  document.getElementById('newPhotoButton').addEventListener('click', openPhotoPicker);
+  document.getElementById('newPhotoButton').addEventListener('click', () => openPhotoPicker('new'));
   document.getElementById('emptyAddButton').addEventListener('click', () => openEditor());
   document.querySelectorAll('.close-modal').forEach(button => button.addEventListener('click', closeEditor));
   document.querySelectorAll('.close-audio-modal').forEach(button => button.addEventListener('click', closeAudioModal));
@@ -2212,7 +2398,15 @@ function initEvents() {
     control.addEventListener('change', renderRecords);
   });
   elements.clearAdvancedFilters.addEventListener('click', clearAllFilters);
-  elements.photoInput.addEventListener('change', handlePhotoSelected);
+  elements.photoCameraInput.addEventListener('change', handlePhotoSelected);
+  elements.photoGalleryInput.addEventListener('change', handlePhotoSelected);
+  document.getElementById('choosePhotoCameraButton').addEventListener('click', () => choosePhotoSource('camera'));
+  document.getElementById('choosePhotoGalleryButton').addEventListener('click', () => choosePhotoSource('gallery'));
+  document.getElementById('closePhotoSourceButton').addEventListener('click', closePhotoSourcePicker);
+  document.getElementById('cancelPhotoSourceButton').addEventListener('click', closePhotoSourcePicker);
+  elements.photoSourceModal.addEventListener('click', event => { if (event.target === elements.photoSourceModal) closePhotoSourcePicker(); });
+  elements.addPhotoToNote.addEventListener('click', () => openPhotoPicker('note'));
+  
   elements.startRecording.addEventListener('click', startAudioRecording);
   elements.stopRecording.addEventListener('click', stopAudioRecording);
   elements.saveAudio.addEventListener('click', saveAudioRecording);
@@ -2234,6 +2428,7 @@ function initEvents() {
   const openSettings = () => {
     updateBiometricSettings();
     updateNotificationSettings();
+    applyAppearancePreferences(readAppearancePreferences());
     elements.settingsModal.hidden = false;
     document.body.classList.add('modal-open');
   };
@@ -2290,9 +2485,27 @@ function initEvents() {
   }));
   elements.settingsModal.addEventListener('click', event => { if (event.target === elements.settingsModal) { elements.settingsModal.hidden = true; document.body.classList.remove('modal-open'); } });
   elements.enableBiometric.addEventListener('click', enableBiometricUnlock);
+  elements.autoBiometricToggle.addEventListener('change', async () => {
+    if (!vaultConfig || !vaultConfig.biometric) {
+      elements.autoBiometricToggle.checked = false;
+      showToast('Önce biyometrik kilidi etkinleştir.');
+      return;
+    }
+    vaultConfig.autoBiometricUnlock = elements.autoBiometricToggle.checked;
+    try {
+      await saveMeta(vaultConfig);
+      updateBiometricSettings();
+      showToast(vaultConfig.autoBiometricUnlock ? 'Açılışta otomatik biyometrik giriş açıldı.' : 'Otomatik biyometrik giriş kapatıldı.');
+    } catch (error) {
+      elements.autoBiometricToggle.checked = !elements.autoBiometricToggle.checked;
+      showToast('Ayar kaydedilemedi.');
+    }
+  });
+  [elements.appearanceTheme, elements.appearanceAccent, elements.appearanceDensity].forEach(control => control.addEventListener('change', saveAppearancePreferences));
   elements.disableBiometric.addEventListener('click', async () => {
     if (!window.confirm('Bedrock biyometrik hızlı açmayı kapatsın mı? Bundan sonra ana parola kullanılır.')) return;
     vaultConfig.biometric = null;
+    vaultConfig.autoBiometricUnlock = false;
     await saveMeta(vaultConfig);
     updateBiometricSettings();
     showToast('Biyometrik hızlı açma kapatıldı.');
@@ -2336,6 +2549,7 @@ function initEvents() {
       if (!elements.modal.hidden) closeEditor();
       if (!elements.audioModal.hidden) closeAudioModal();
       if (!elements.photoModal.hidden) closePhotoModal();
+      if (!elements.photoSourceModal.hidden) closePhotoSourcePicker();
       if (!elements.settingsModal.hidden) { elements.settingsModal.hidden = true; document.body.classList.remove('modal-open'); }
       if (!elements.changePasswordModal.hidden) { elements.changePasswordModal.hidden = true; elements.changePasswordForm.reset(); document.body.classList.remove('modal-open'); }
       if (!elements.passwordModal.hidden) closePasswordEditor();
@@ -2363,6 +2577,7 @@ function initEvents() {
       if (pageHiddenAt && Date.now() - pageHiddenAt > 5 * 60 * 1000 && vaultCryptoKey) lockVault();
       pageHiddenAt = 0;
       if (vaultCryptoKey) { processDueReminders(); scheduleNextReminder(); }
+      else if (gateMode === 'unlock' && !elements.gate.hidden) scheduleAutomaticBiometricUnlock();
     }
   });
   window.addEventListener('pagehide', () => {
@@ -2532,6 +2747,7 @@ async function registerServiceWorker() {
 }
 
 async function init() {
+  applyAppearancePreferences(readAppearancePreferences());
   initEvents();
   try {
     const currentUrl = new URL(window.location.href);
