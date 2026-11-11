@@ -18,7 +18,7 @@ const BACKUP_MAX_BYTES = 100 * 1024 * 1024;
 const BACKUP_MAX_RECORDS = 50000;
 const BACKUP_MAX_ATTACHMENTS_PER_RECORD = 250;
 const BACKUP_MAX_METADATA_BYTES = 2 * 1024 * 1024;
-const APP_VERSION = '0.9.0';
+const APP_VERSION = '0.9.1';
 const MAX_IMAGE_EDGE = 1600;
 const IMAGE_JPEG_QUALITY = 0.82;
 
@@ -506,12 +506,19 @@ function setGateMode(mode) {
   elements.gateConfirm.required = mode === 'setup';
   elements.gatePassword.autocomplete = mode === 'setup' ? 'new-password' : 'current-password';
   elements.gateBiometric.hidden = mode !== 'unlock' || !vaultConfig || !vaultConfig.biometric;
-  elements.gateRestoreBackup.hidden = mode !== 'setup';
-  if (mode === 'setup') {
+  elements.gateRestoreBackup.hidden = mode !== 'setup' && mode !== 'recovery';
+  elements.gateForm.hidden = mode === 'recovery';
+  if (mode === 'recovery') {
+    elements.gateTitle.textContent = 'Mevcut kasa verileri bulundu.';
+    elements.gateSubtitle.textContent = 'Şifrelenmiş kayıtlar var ancak kasa anahtar ayarı bu adreste bulunamadı. Yeni kasa oluşturma; ilk kullandığın adresi aç veya şifreli yedeğini geri yükle.';
+    elements.gateSubmit.hidden = true;
+  } else if (mode === 'setup') {
+    elements.gateSubmit.hidden = false;
     elements.gateTitle.textContent = 'Kişisel kasanı oluştur.';
     elements.gateSubtitle.textContent = 'Bir ana parola belirle. Bedrock kayıtlarını bu parola ile cihazında şifreleyecek.';
     elements.gateSubmit.textContent = 'Güvenli kasayı oluştur';
   } else {
+    elements.gateSubmit.hidden = false;
     elements.gateTitle.textContent = 'Bedrock kilitli.';
     elements.gateSubtitle.textContent = 'Kayıtlarını açmak için ana parolanı gir.';
     elements.gateSubmit.textContent = 'Kasayı aç';
@@ -2376,6 +2383,42 @@ async function savePhotoRecord() {
   }
 }
 
+function bindGateFormEarly() {
+  // Bind the security form before wiring optional UI controls. If any later
+  // control fails to initialize, the form must never fall back to a native
+  // GET submission (which reloads the page and looks like a vault-creation loop).
+  elements.gateForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!database) {
+      elements.gateError.textContent = 'Bedrock henüz hazırlanıyor. Birkaç saniye sonra tekrar dene.';
+      return;
+    }
+    const password = elements.gatePassword.value;
+    elements.gateError.textContent = '';
+    if (gateMode === 'recovery') {
+      elements.gateError.textContent = 'Yeni kasa oluşturulamaz. Şifreli yedekten geri yükle veya ilk kullandığın adresi aç.';
+      return;
+    }
+    if (gateMode === 'setup') {
+      if (password.length < 12) { elements.gateError.textContent = 'Ana parola en az 12 karakter olmalı.'; return; }
+      if (password !== elements.gateConfirm.value) { elements.gateError.textContent = 'Parolalar eşleşmiyor.'; return; }
+    } else if (!password) { elements.gateError.textContent = 'Ana parolanı gir.'; return; }
+    elements.gateSubmit.disabled = true;
+    try {
+      if (gateMode === 'setup') await setupVault(password);
+      else await unlockWithPassword(password);
+    } catch (error) {
+      console.error('Bedrock kasa formu:', error);
+      elements.gateError.textContent = gateMode === 'setup'
+        ? (error.message || 'Kasa oluşturulamadı.')
+        : 'Ana parola yanlış veya kayıtlar açılamadı. Kasanın verileri değiştirilmedi.';
+    } finally {
+      elements.gateSubmit.disabled = false;
+    }
+  });
+}
+
 function initEvents() {
   document.getElementById('newNoteButton').addEventListener('click', () => openEditor(null, 'note'));
   document.getElementById('newObjectButton').addEventListener('click', () => openEditor(null, 'object'));
@@ -2525,24 +2568,6 @@ function initEvents() {
     elements.changePasswordForm.reset();
   }));
   elements.changePasswordForm.addEventListener('submit', changeMasterPassword);
-  elements.gateForm.addEventListener('submit', async event => {
-    event.preventDefault();
-    const password = elements.gatePassword.value;
-    elements.gateError.textContent = '';
-    if (gateMode === 'setup') {
-      if (password.length < 12) { elements.gateError.textContent = 'Ana parola en az 12 karakter olmalı.'; return; }
-      if (password !== elements.gateConfirm.value) { elements.gateError.textContent = 'Parolalar eşleşmiyor.'; return; }
-    } else if (!password) { elements.gateError.textContent = 'Ana parolanı gir.'; return; }
-    elements.gateSubmit.disabled = true;
-    try {
-      if (gateMode === 'setup') await setupVault(password);
-      else await unlockWithPassword(password);
-    } catch (error) {
-      elements.gateError.textContent = gateMode === 'setup' ? (error.message || 'Kasa oluşturulamadı.') : 'Ana parola yanlış veya kayıtlar açılamadı.';
-    } finally {
-      elements.gateSubmit.disabled = false;
-    }
-  });
   elements.gateBiometric.addEventListener('click', unlockWithBiometric);
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape') {
@@ -2747,8 +2772,21 @@ async function registerServiceWorker() {
 }
 
 async function init() {
-  applyAppearancePreferences(readAppearancePreferences());
-  initEvents();
+  // The gate handler is deliberately bound first so a later UI initialization
+  // error can never trigger a native form navigation/reload.
+  try {
+    bindGateFormEarly();
+  } catch (error) {
+    console.error('Bedrock güvenlik formu başlatılamadı:', error);
+    elements.gateError.textContent = 'Güvenlik formu başlatılamadı. Sayfayı yenileyip tekrar dene.';
+  }
+  try {
+    applyAppearancePreferences(readAppearancePreferences());
+    initEvents();
+  } catch (error) {
+    console.error('Bedrock arayüz başlatma hatası:', error);
+    elements.gateError.textContent = 'Arayüzün bir bölümü yüklenemedi: ' + (error.message || 'bilinmeyen hata');
+  }
   try {
     const currentUrl = new URL(window.location.href);
     pendingReminderRecordId = currentUrl.searchParams.get('reminder') || null;
@@ -2763,7 +2801,24 @@ async function init() {
     }
     database = await openDatabase();
     vaultConfig = await getMeta('vaultConfig');
-    setGateMode(vaultConfig ? 'unlock' : 'setup');
+    if (vaultConfig && vaultConfig.key === 'vaultConfig' && vaultConfig.kdf === 'PBKDF2-SHA-256'
+      && Number.isInteger(vaultConfig.iterations) && typeof vaultConfig.salt === 'string'
+      && typeof vaultConfig.wrapIv === 'string' && typeof vaultConfig.wrappedKey === 'string') {
+      setGateMode('unlock');
+    } else {
+      // Never offer a fresh vault over orphaned encrypted records. This can
+      // happen when the app is opened under a different origin/profile or when
+      // browser storage was partially removed. Recovery must be explicit.
+      const stored = await storeRequest('readonly', store => store.getAll());
+      const hasEncryptedRecords = stored.some(item => item && item.format === VAULT_FORMAT);
+      if (hasEncryptedRecords) {
+        setGateMode('recovery');
+        elements.gateError.textContent = 'Mevcut şifrelenmiş kayıtlar bulundu. Yeni kasa oluşturma; eski adresi kontrol et veya .bedrock yedeğini geri yükle.';
+      } else {
+        setGateMode('setup');
+        elements.gateSubtitle.textContent = 'Bu tarayıcı adresinde kasa ayarı bulunamadı. Daha önce Bedrock kullandıysan aynı HTTPS adresini ve tarayıcı profilini aç. Yeni kasa oluşturmak eski kasanı geri getirmez.';
+      }
+    }
     registerServiceWorker();
   } catch (error) {
     console.error(error);

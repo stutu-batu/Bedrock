@@ -1,21 +1,8 @@
-# Bedrock v0.9.0
+# Bedrock v0.9.1 – Kasa açılış hatası düzeltmesi
 
-## Görünüm ve kullanım iyileştirmeleri
-- Koyu/açık tema, vurgu rengi ve kompakt/rahat ekran düzeni eklendi.
-- Tercihler cihazda tutulur; kasa kayıtlarının şifrelemesini değiştirmez.
-- Ana sayfanın sağındaki dikey kaydırma çubuğu gizlendi; kaydırma davranışı korunur.
-
-## Fotoğraf akışı
-- Fotoğraf eklerken önce Kamera veya Galeri seçimi gösterilir.
-- Bir not/eşya kaydı düzenlenirken sonradan birden fazla fotoğraf eklenebilir.
-- Yeni fotoğraflar notun Kaydet düğmesine basılınca şifreli biçimde kayda eklenir.
-
-## Biyometrik açılış
-- Ayarlara, uygulama açıldığında otomatik biyometrik doğrulama başlatma tercihi eklendi.
-- Bu seçenek yalnızca biyometrik hızlı açma kurulmuşsa kullanılabilir.
-- Bazı tarayıcılar WebAuthn için kullanıcı dokunuşu isteyebilir; manuel biyometrik düğme ve ana parola yedeği korunur.
-
-## Veri ve yükseltme
-- IndexedDB şeması değiştirilmedi.
-- Mevcut v0.8 kayıtları ve şifreli yedek biçimleri korunur.
-- Biyometrik otomatik giriş tercihi cihaza özgüdür ve yedeğe aktarılmaz.
+- Kasa formu, diğer arayüz kontrollerinden önce bağlanır; JavaScript başlatma sorunu yaşansa bile form tarayıcıya GET olarak gönderilip sayfayı yenilemez.
+- JavaScript dosyası yüklenemezse ekranda açıklayıcı hata gösterilir.
+- `app.js` ve `styles.css` için sürümlü URL kullanılır; eski Service Worker önbelleğinden v0.9 dosyalarının gelmesi engellenir.
+- Service Worker önbelleği `bedrock-shell-v9-1` olarak güncellendi.
+- Kasa ayarı bulunamadığı halde şifreli kayıtlar varsa yeni kasa oluşturma engellenir; mevcut kayıtları ezmek yerine kurtarma/şifreli yedek geri yükleme ekranı gösterilir.
+- Var olan DB adı, veritabanı sürümü ve şifreli yedek biçimleri değiştirilmedi.

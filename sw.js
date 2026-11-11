@@ -1,10 +1,10 @@
 'use strict';
-const CACHE_NAME = 'bedrock-shell-v9-0';
+const CACHE_NAME = 'bedrock-shell-v9-1';
 const APP_SHELL = [
   './',
   './index.html',
-  './styles.css',
-  './app.js',
+  './styles.css?v=0.9.1',
+  './app.js?v=0.9.1',
   './manifest.webmanifest',
   './icons/bedrock.svg',
   './icons/bedrock-192.png',

@@ -8,7 +8,7 @@
   <title>Bedrock</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/bedrock.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=0.9.1">
 </head>
 <body class="vault-locked">
   <div class="security-gate" id="securityGate">
@@ -17,7 +17,7 @@
       <p class="eyebrow">KİŞİSEL KASAN</p>
       <h1 id="gateTitle">Kişisel kasanı oluştur.</h1>
       <p class="security-description" id="gateSubtitle">Bir ana parola belirle. Bedrock kayıtlarını bu parola ile cihazında şifreleyecek.</p>
-      <form id="gateForm">
+      <form id="gateForm" onsubmit="return false">
         <label class="field-label" for="gatePassword">Ana parola</label>
         <input class="text-field" id="gatePassword" type="password" minlength="12" maxlength="256" autocomplete="current-password" placeholder="En az 12 karakter" required>
         <div id="gateConfirmWrap">
@@ -27,8 +27,8 @@
         <p class="security-error" id="gateError" role="alert"></p>
         <button class="button-primary security-submit" id="gateSubmit" type="submit">Güvenli kasayı oluştur</button>
         <button class="button-secondary security-biometric" id="gateBiometricButton" type="button" hidden>Parmak izi / cihaz doğrulamasıyla aç</button>
-        <button class="button-secondary security-biometric" id="gateRestoreBackupButton" type="button" hidden>Şifreli yedekten geri yükle</button>
       </form>
+      <button class="button-secondary security-biometric" id="gateRestoreBackupButton" type="button" hidden>Şifreli yedekten geri yükle</button>
       <p class="security-footnote">Ana parolanı unutursan Bedrock kayıtlarını kurtaramaz. Parola sunucuya gönderilmez; cihazında anahtar türetmek için kullanılır.</p>
     </section>
   </div>
@@ -427,6 +427,6 @@
   </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="app.js" defer></script>
+  <script src="app.js?v=0.9.1" defer onerror="document.getElementById('gateError').textContent='Bedrock kod dosyası yüklenemedi. ZIP içindeki tüm dosyaları yayın klasörünün köküne yüklediğini kontrol et.';document.getElementById('gateSubmit').disabled=true"></script>
 </body>
 </html>

@@ -1,38 +1,28 @@
-# Bedrock v0.9.0
+# Bedrock v0.9.1
 
-Bedrock, kişisel kayıtlarını cihazında şifreli saklayan çevrimdışı odaklı bir PWA'dır.
+## Önemli düzeltme
+v0.9'da görülen kasa oluşturma ekranına dönme / form gönderince sayfanın yenilenmesi sorunu için açılış akışı güçlendirildi. Güvenlik formu en başta bağlanır ve normal tarayıcı form gönderimi kapatılır. Ana JavaScript dosyası yüklenemezse ekranda dosya yolu hatası gösterilir. Eski önbelleği atlamak için `app.js` ve `styles.css` sürüm parametresiyle yüklenir.
 
-## v0.9 yenilikleri
-- Görünüm: koyu/açık tema, dört vurgu rengi, kompakt/rahat düzen.
-- Fotoğraf eklerken kamera veya galeri kaynağını seçme.
-- Var olan not/eşya kaydını düzenlerken daha sonra birden fazla fotoğraf ekleme. Fotoğraflar, kayıttaki **Kaydet** düğmesine basıldığında şifrelenerek saklanır.
-- Ayarlarda uygulama açılırken otomatik biyometrik doğrulama başlatma seçeneği.
-- Sağ dikey kaydırma çubuğu gizlendi; sayfa ve modaller kaydırılmaya devam eder.
+## Mevcut kasa verileri
+- Veritabanı adı `bedrock-local`, şema sürümü `3` olarak korunmuştur.
+- Kasa ayarı bulunursa doğrudan kilit açma ekranı gösterilir.
+- Kasa ayarı bulunmadığı halde şifreli kayıtlar tespit edilirse yeni kasa oluşturulmaz; kurtarma ekranı gösterilir.
+- Yeni sürüm eski v0.8/v0.9 veritabanı ve şifreli yedek biçimlerini değiştirmez.
 
-## Güncelleme
-1. Önce v0.8'den şifreli yedek almanı öneririz.
-2. Bu klasörün tüm içeriğini mevcut HTTPS yayın dizinine, klasör yapısını koruyarak yükle.
-3. Aynı yayın adresini ve tarayıcı profilini kullan. Tarayıcı verilerini/IndexedDB'yi temizleme.
-4. Bedrock'u internet açıkken yeniden aç; Service Worker önbelleği `bedrock-shell-v9-0` sürümüne yükselir.
+## Güncelleme – çok önemli
+1. Mevcut kasanın bulunduğu **aynı HTTPS adresini** kullan.
+2. ZIP'i aç. `index.html`, `app.js`, `styles.css`, `sw.js`, `manifest.webmanifest` ve `icons/` doğrudan ZIP'in kök dizinindedir. **Üst klasörü değil, ZIP içindeki bu dosya ve klasörlerin tamamını yayın dizininin köküne yükle.**
+3. Eski `index.html`, `app.js`, `styles.css` ve `sw.js` dosyalarının üzerine yaz.
+4. Telefonunda siteyi internet açıkken yenile. `app.js?v=0.9.1` isteğinin başarılı yüklendiğini doğrula.
+5. Tarayıcı verilerini, IndexedDB'yi veya site depolamasını silme.
 
-## Fotoğraf ekleme
-- Ana ekrandaki Fotoğraf kartı artık önce Kamera / Galeri seçimini açar.
-- Bir notu düzenlerken **Fotoğraf ekle** düğmesine dokun. Galeriden birden fazla fotoğraf seçebilir veya kamerayla tek tek çekebilirsin.
-- Seçilen fotoğraflar düzenleme ekranında önizlenir. Kalıcı ekleme için notu kaydet. Kaydetmeden formu kapatırsan bekleyen yeni fotoğraflar eklenmez.
+## Eğer hâlâ kasa oluşturma ekranı gelirse
+- Tarayıcı adres çubuğundaki adresin, kasayı ilk oluşturduğun HTTPS adresiyle birebir aynı olduğunu kontrol et.
+- Farklı bir tarayıcı profili / gizli sekme / farklı alan adı ayrı IndexedDB alanı kullanır.
+- Yeni kasa oluşturma düğmesine basarak eski kasayı kurtarmaya çalışma. Şifreli `.bedrock` yedeğini geri yükle veya eski adresi kullan.
+- Şifrelenmiş kayıtlar bulunduğu halde kasa ayarı yoksa v0.9.1 yeni kasa oluşturmayı engeller.
 
-## Otomatik biyometrik giriş
-1. Ayarlar'da biyometrik hızlı açma daha önce kurulmuş olmalı.
-2. **Uygulama açılınca otomatik biyometrik giriş** anahtarını aç.
-3. Bedrock açıldığında biyometrik doğrulamayı otomatik başlatmayı dener.
-4. Android tarayıcısı/WebAuthn etkileşim gerektirirse ekrandaki biyometrik düğmesine dokun veya ana parolanı kullan.
-
-Biyometrik otomatik giriş tercihi cihaz ve tarayıcı profiline özeldir, şifreli yedeğe dahil edilmez.
-
-## Görünüm ayarları
-Tema, vurgu rengi ve yoğunluk tercihi cihazın `localStorage` alanında tutulur. Bunlar kasa verisi değildir ve notların şifrelemesini etkilemez.
-
-## Test
-- JavaScript: `node --check app.js`
-- Yedekleme güvenlik testleri: `node --test tests/backup-security.test.cjs`
-
-Not: PWA'da otomatik biyometrik WebAuthn istemi bazı tarayıcılarda kullanıcı hareketi gerektirebilir. Ana parola ve manuel biyometrik giriş seçenekleri korunur.
+## Teknik
+- DB: IndexedDB `bedrock-local`, version `3` (değişmedi).
+- AES-GCM/PBKDF2 kasa biçimi ve backup biçimi korunmuştur.
+- Service Worker cache: `bedrock-shell-v9-1`.
