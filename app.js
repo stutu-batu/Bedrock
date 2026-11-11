@@ -18,7 +18,7 @@ const BACKUP_MAX_BYTES = 100 * 1024 * 1024;
 const BACKUP_MAX_RECORDS = 50000;
 const BACKUP_MAX_ATTACHMENTS_PER_RECORD = 250;
 const BACKUP_MAX_METADATA_BYTES = 2 * 1024 * 1024;
-const APP_VERSION = '0.9.1';
+const APP_VERSION = '0.9.2';
 const MAX_IMAGE_EDGE = 1600;
 const IMAGE_JPEG_QUALITY = 0.82;
 
@@ -2278,7 +2278,30 @@ function openPhotoPicker(target = 'new') {
 
 function closePhotoSourcePicker() {
   elements.photoSourceModal.hidden = true;
-  if (elements.modal.hidden && elements.photoModal.hidden) document.body.classList.remove('modal-open');
+  if (elements.modal.hidden && elements.photoModal.hidden && elements.audioModal.hidden && elements.settingsModal.hidden) {
+    document.body.classList.remove('modal-open');
+  }
+}
+
+// v0.9.1 accidentally referenced this function without defining it. That
+// ReferenceError interrupted initEvents(), leaving every listener registered
+// after the photo-modal wiring inactive (settings, biometrics, photo inputs,
+// and the note form submit handler). Keep cleanup centralized and idempotent.
+function closePhotoModal() {
+  elements.photoModal.hidden = true;
+  if (pendingPhotoUrl) {
+    try { URL.revokeObjectURL(pendingPhotoUrl); } catch (_) { /* already released */ }
+  }
+  pendingPhotoUrl = null;
+  pendingPhotoBlob = null;
+  if (elements.photoPreview) elements.photoPreview.removeAttribute('src');
+  if (elements.photoTitle) elements.photoTitle.value = '';
+  if (elements.photoDescription) elements.photoDescription.value = '';
+  if (elements.photoTags) elements.photoTags.value = '';
+  if (elements.savePhoto) elements.savePhoto.disabled = false;
+  if (elements.photoSourceModal.hidden && elements.modal.hidden && elements.audioModal.hidden && elements.settingsModal.hidden) {
+    document.body.classList.remove('modal-open');
+  }
 }
 
 function choosePhotoSource(source) {

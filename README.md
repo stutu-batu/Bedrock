@@ -1,28 +1,27 @@
-# Bedrock v0.9.1
+# Bedrock v0.9.2
 
-## Önemli düzeltme
-v0.9'da görülen kasa oluşturma ekranına dönme / form gönderince sayfanın yenilenmesi sorunu için açılış akışı güçlendirildi. Güvenlik formu en başta bağlanır ve normal tarayıcı form gönderimi kapatılır. Ana JavaScript dosyası yüklenemezse ekranda dosya yolu hatası gösterilir. Eski önbelleği atlamak için `app.js` ve `styles.css` sürüm parametresiyle yüklenir.
+## Critical v0.9.1 startup fix
 
-## Mevcut kasa verileri
-- Veritabanı adı `bedrock-local`, şema sürümü `3` olarak korunmuştur.
-- Kasa ayarı bulunursa doğrudan kilit açma ekranı gösterilir.
-- Kasa ayarı bulunmadığı halde şifreli kayıtlar tespit edilirse yeni kasa oluşturulmaz; kurtarma ekranı gösterilir.
-- Yeni sürüm eski v0.8/v0.9 veritabanı ve şifreli yedek biçimlerini değiştirmez.
+The v0.9.1 JavaScript referenced a missing `closePhotoModal()` function while `initEvents()` was wiring controls. That `ReferenceError` stopped all subsequent listeners from being registered. This made settings, biometric controls, photo-source choices, and note saving appear broken; the unhandled note form then fell back to browser form submission and reloaded the page.
 
-## Güncelleme – çok önemli
-1. Mevcut kasanın bulunduğu **aynı HTTPS adresini** kullan.
-2. ZIP'i aç. `index.html`, `app.js`, `styles.css`, `sw.js`, `manifest.webmanifest` ve `icons/` doğrudan ZIP'in kök dizinindedir. **Üst klasörü değil, ZIP içindeki bu dosya ve klasörlerin tamamını yayın dizininin köküne yükle.**
-3. Eski `index.html`, `app.js`, `styles.css` ve `sw.js` dosyalarının üzerine yaz.
-4. Telefonunda siteyi internet açıkken yenile. `app.js?v=0.9.1` isteğinin başarılı yüklendiğini doğrula.
-5. Tarayıcı verilerini, IndexedDB'yi veya site depolamasını silme.
+v0.9.2 restores `closePhotoModal()`, safely clears the temporary photo preview URL and draft fields, and keeps the page scroll lock correct when other dialogs are open.
 
-## Eğer hâlâ kasa oluşturma ekranı gelirse
-- Tarayıcı adres çubuğundaki adresin, kasayı ilk oluşturduğun HTTPS adresiyle birebir aynı olduğunu kontrol et.
-- Farklı bir tarayıcı profili / gizli sekme / farklı alan adı ayrı IndexedDB alanı kullanır.
-- Yeni kasa oluşturma düğmesine basarak eski kasayı kurtarmaya çalışma. Şifreli `.bedrock` yedeğini geri yükle veya eski adresi kullan.
-- Şifrelenmiş kayıtlar bulunduğu halde kasa ayarı yoksa v0.9.1 yeni kasa oluşturmayı engeller.
+## Update on Android
 
-## Teknik
-- DB: IndexedDB `bedrock-local`, version `3` (değişmedi).
-- AES-GCM/PBKDF2 kasa biçimi ve backup biçimi korunmuştur.
-- Service Worker cache: `bedrock-shell-v9-1`.
+1. Keep a copy of your `.bedrock` encrypted backup first, if you have one.
+2. Extract this ZIP. `index.html`, `app.js`, `styles.css`, `sw.js`, `manifest.webmanifest`, `VERSION`, and the `icons/` and `tests/` folders must stay in the published site root.
+3. Upload the contents of the extracted `bedrock-v0.9.2` folder to the **same HTTPS address and same GitHub Pages path** you already use. Overwrite the old files.
+4. Open Bedrock once with internet available. The Service Worker cache name has changed to `bedrock-shell-v9-2`; the updated app files should be fetched and the previous Bedrock shell cache removed on activation.
+5. Close and reopen Bedrock. If the old screen is still visible, close the installed PWA/browser tab completely and open the same address again while online.
+6. Do **not** clear browser data, IndexedDB, or site storage. Do not change the site origin/path; the encrypted vault is stored under that browser origin.
+
+## Data compatibility
+
+- IndexedDB database: `bedrock-local`, schema version `3` (unchanged).
+- Vault key wrapping and encrypted record structure: unchanged.
+- v1/v2 encrypted backup formats: unchanged.
+- This update does not reset the vault and does not ask you to create a new one.
+
+## Validation
+
+See `TEST-REPORT.md` for the regression, browser, backup, biometric, and offline test results. The automated Node suite contains 15 passing tests. Mobile viewport Chromium workflows also passed. Real Android camera/microphone and physical fingerprint sensor checks remain device-level validation.
