@@ -43,7 +43,7 @@ test('appearance settings cover theme, accent and density and are persisted loca
 test('right-side scrollbars are hidden without disabling scrolling and PWA cache is versioned', () => {
   assert.match(css, /scrollbar-width:\s*none/);
   assert.match(css, /::-webkit-scrollbar/);
-  assert.match(sw, /bedrock-shell-v9-2/);
+  assert.match(sw, /bedrock-shell-v10-0/);
 });
 
 test('all static getElementById references exist and IDs are unique', () => {

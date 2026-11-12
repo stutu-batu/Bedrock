@@ -20,7 +20,7 @@ test('security gate handler is installed before optional UI wiring', () => {
 test('gate form cannot fall back to native GET navigation', () => {
   assert.match(html, /<form id="gateForm" onsubmit="return false">/);
   assert.match(app, /elements\.gateForm\.addEventListener\('submit', async event => \{\s*event\.preventDefault\(\);\s*event\.stopPropagation\(\);/);
-  assert.match(html, /app\.js\?v=0\.9\.2/);
+  assert.match(html, /app\.js\?v=0\.10\.0/);
   assert.match(html, /onerror="document\.getElementById/);
 });
 
@@ -38,7 +38,7 @@ test('orphaned encrypted records are routed to recovery instead of new vault set
 });
 
 test('service worker shell cache is bumped and pre-caches versioned assets', () => {
-  assert.match(sw, /bedrock-shell-v9-2/);
-  assert.match(sw, /app\.js\?v=0\.9\.2/);
-  assert.match(sw, /styles\.css\?v=0\.9\.2/);
+  assert.match(sw, /bedrock-shell-v10-0/);
+  assert.match(sw, /app\.js\?v=0\.10\.0/);
+  assert.match(sw, /styles\.css\?v=0\.10\.0/);
 });

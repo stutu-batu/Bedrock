@@ -1,27 +1,34 @@
-# Bedrock v0.9.2
+# Bedrock v0.10.0
 
-## Critical v0.9.1 startup fix
+Bedrock is an offline-first personal vault. It stores encrypted records locally in IndexedDB and can be installed as a PWA.
 
-The v0.9.1 JavaScript referenced a missing `closePhotoModal()` function while `initEvents()` was wiring controls. That `ReferenceError` stopped all subsequent listeners from being registered. This made settings, biometric controls, photo-source choices, and note saving appear broken; the unhandled note form then fell back to browser form submission and reloaded the page.
+## v0.10 workspace
+- Tap a record card or its open icon to open it in a workspace tab.
+- Tabs are shown above the library. Select a tab to switch records; close it with its x button.
+- On desktop/tablet-width screens, use the split icon to open a second pane. Select a pane, then open a record from the library to place it there.
+- On phones, use the bottom tab-counter icon to switch between open tabs. Split view is intentionally disabled on narrow screens.
+- Password records remain masked in the workspace; use the key/open action to reveal credentials in the protected detail dialog.
 
-v0.9.2 restores `closePhotoModal()`, safely clears the temporary photo preview URL and draft fields, and keeps the page scroll lock correct when other dialogs are open.
+## Home screen
+The home screen now uses compact icon-only quick actions and category icons. Buttons retain accessible names and title tooltips.
 
 ## Update on Android
-
-1. Keep a copy of your `.bedrock` encrypted backup first, if you have one.
-2. Extract this ZIP. `index.html`, `app.js`, `styles.css`, `sw.js`, `manifest.webmanifest`, `VERSION`, and the `icons/` and `tests/` folders must stay in the published site root.
-3. Upload the contents of the extracted `bedrock-v0.9.2` folder to the **same HTTPS address and same GitHub Pages path** you already use. Overwrite the old files.
-4. Open Bedrock once with internet available. The Service Worker cache name has changed to `bedrock-shell-v9-2`; the updated app files should be fetched and the previous Bedrock shell cache removed on activation.
-5. Close and reopen Bedrock. If the old screen is still visible, close the installed PWA/browser tab completely and open the same address again while online.
-6. Do **not** clear browser data, IndexedDB, or site storage. Do not change the site origin/path; the encrypted vault is stored under that browser origin.
+1. Make a fresh encrypted `.bedrock` backup before updating.
+2. Extract this ZIP and upload all files/folders in its root to the same GitHub Pages directory used by your current Bedrock installation.
+3. Keep the same HTTPS origin and path. Do not clear browser data, site storage, or IndexedDB.
+4. Open Bedrock once while online. The Service Worker cache is `bedrock-shell-v10-0`; close and reopen the PWA after it updates.
 
 ## Data compatibility
+- IndexedDB: `bedrock-local`, schema version `3` (unchanged).
+- Vault key wrapping, encrypted record envelope, and backup v1/v2 formats unchanged.
+- Workspace preferences are stored separately in localStorage and contain only random record IDs and pane arrangement, not note text or passwords.
 
-- IndexedDB database: `bedrock-local`, schema version `3` (unchanged).
-- Vault key wrapping and encrypted record structure: unchanged.
-- v1/v2 encrypted backup formats: unchanged.
-- This update does not reset the vault and does not ask you to create a new one.
+## Milestones
+- v0.10: tabbed workspace, desktop split view, compact icon-first UI.
+- v0.11: internal links between notes, backlinks, and local relationship view.
+- v0.12: Markdown editor, live preview, daily notes, and templates.
+- v0.13: resizable panes, drag-to-reorder tabs, quick switcher, and command palette.
+- v1.0: hardening, Android package, migration/backup validation, and final device tests.
 
 ## Validation
-
-See `TEST-REPORT.md` for the regression, browser, backup, biometric, and offline test results. The automated Node suite contains 15 passing tests. Mobile viewport Chromium workflows also passed. Real Android camera/microphone and physical fingerprint sensor checks remain device-level validation.
+See `TEST-REPORT.md` for automated checks and limitations.

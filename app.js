@@ -18,7 +18,7 @@ const BACKUP_MAX_BYTES = 100 * 1024 * 1024;
 const BACKUP_MAX_RECORDS = 50000;
 const BACKUP_MAX_ATTACHMENTS_PER_RECORD = 250;
 const BACKUP_MAX_METADATA_BYTES = 2 * 1024 * 1024;
-const APP_VERSION = '0.9.2';
+const APP_VERSION = '0.10.0';
 const MAX_IMAGE_EDGE = 1600;
 const IMAGE_JPEG_QUALITY = 0.82;
 
@@ -132,7 +132,17 @@ const elements = {
   verifyBackup: document.getElementById('verifyBackupButton'),
   runSecurityAudit: document.getElementById('runSecurityAuditButton'),
   securityAuditModal: document.getElementById('securityAuditModal'),
-  securityAuditResults: document.getElementById('securityAuditResults')
+  securityAuditResults: document.getElementById('securityAuditResults'),
+  workspacePanel: document.getElementById('workspacePanel'),
+  workspaceGrid: document.getElementById('workspaceGrid'),
+  workspaceOpenCount: document.getElementById('workspaceOpenCount'),
+  workspaceSplitButton: document.getElementById('workspaceSplitButton'),
+  workspaceCloseAllButton: document.getElementById('workspaceCloseAllButton'),
+  workspaceTabs: [document.getElementById('workspaceTabs0'), document.getElementById('workspaceTabs1')],
+  workspaceContents: [document.getElementById('workspaceContent0'), document.getElementById('workspaceContent1')],
+  workspaceTabSwitcher: document.getElementById('workspaceTabSwitcher'),
+  workspaceTabSwitcherList: document.getElementById('workspaceTabSwitcherList'),
+  mobileTabCount: document.getElementById('mobileTabCount')
 };
 
 let database;
@@ -180,6 +190,44 @@ let searchDebounceTimer = null;
 let reminderTimer = null;
 let reminderDispatchRunning = false;
 let pendingReminderRecordId = null;
+const WORKSPACE_STORAGE_KEY = 'bedrock-workspace-v1';
+let workspacePanes = [{ tabs: [], activeId: null }, { tabs: [], activeId: null }];
+let workspaceSplit = false;
+let activeWorkspacePane = 0;
+let workspaceObjectUrls = [];
+
+function readWorkspaceState() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(WORKSPACE_STORAGE_KEY) || 'null');
+    if (!saved || typeof saved !== 'object') return;
+    workspacePanes = [0, 1].map(index => {
+      const pane = saved.panes && saved.panes[index] || {};
+      const tabs = Array.isArray(pane.tabs) ? pane.tabs.filter(id => typeof id === 'string').slice(0, 12) : [];
+      return { tabs: [...new Set(tabs)], activeId: typeof pane.activeId === 'string' ? pane.activeId : tabs[tabs.length - 1] || null };
+    });
+    workspaceSplit = Boolean(saved.split);
+    activeWorkspacePane = saved.activePane === 1 ? 1 : 0;
+  } catch (_) {
+    workspacePanes = [{ tabs: [], activeId: null }, { tabs: [], activeId: null }];
+    workspaceSplit = false;
+    activeWorkspacePane = 0;
+  }
+}
+
+function saveWorkspaceState() {
+  try {
+    const safeState = {
+      panes: workspacePanes.map(pane => ({ tabs: pane.tabs.slice(0, 12), activeId: pane.activeId })),
+      split: workspaceSplit,
+      activePane: activeWorkspacePane
+    };
+    localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(safeState));
+  } catch (error) {
+    console.warn('Çalışma alanı düzeni saklanamadı:', error);
+  }
+}
+
+readWorkspaceState();
 
 function openDatabase() {
   return new Promise((resolve, reject) => {
@@ -235,6 +283,7 @@ function upsertRecordInMemory(record) {
   else records.push(record);
   records.sort((a, b) => b.updatedAt - a.updatedAt);
   renderRecords();
+  renderWorkspace();
   scheduleNextReminder();
   if (!document.hidden) window.setTimeout(processDueReminders, 250);
 }
@@ -242,7 +291,13 @@ function upsertRecordInMemory(record) {
 function removeRecordsInMemory(ids) {
   const removed = new Set(ids);
   records = records.filter(record => !removed.has(record.id));
+  for (const pane of workspacePanes) {
+    pane.tabs = pane.tabs.filter(id => !removed.has(id));
+    if (!pane.tabs.includes(pane.activeId)) pane.activeId = pane.tabs[pane.tabs.length - 1] || null;
+  }
+  saveWorkspaceState();
   renderRecords();
+  renderWorkspace();
   scheduleNextReminder();
 }
 
@@ -259,6 +314,7 @@ async function loadRecords() {
   records = decrypted;
   records.sort((a, b) => b.updatedAt - a.updatedAt);
   renderRecords();
+  renderWorkspace();
   // Rebuild local reminder timers after every vault unlock / app reload.
   // The scheduler is page-bound; it is not an OS alarm while the PWA is closed.
   scheduleNextReminder();
@@ -802,6 +858,10 @@ function clearUnlockedSession() {
   vaultCryptoKey = null;
   records = [];
   releaseRenderedObjectUrls();
+  releaseWorkspaceObjectUrls();
+  elements.workspacePanel.hidden = true;
+  elements.workspaceTabs.forEach(node => node.replaceChildren());
+  elements.workspaceContents.forEach(node => node.replaceChildren());
   elements.search.value = '';
   elements.dateFilter.value = 'all';
   elements.contentFilter.value = 'all';
@@ -952,6 +1012,351 @@ function createRecordAction(label, title, glyph, onClick, extraClass = '') {
   return button;
 }
 
+function releaseWorkspaceObjectUrls() {
+  for (const url of workspaceObjectUrls) URL.revokeObjectURL(url);
+  workspaceObjectUrls = [];
+}
+
+function makeWorkspaceIcon(name) {
+  const paths = {
+    open: '<path d="M14 4h6v6M20 4l-9 9M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6"/>',
+    close: '<path d="m6 6 12 12M18 6 6 18"/>',
+    edit: '<path d="m14 5 5 5M4 20l4.5-1 10.8-10.8a2.1 2.1 0 0 0-3-3L5.5 16 4 20Z"/>',
+    star: '<path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9L12 3Z"/>',
+    archive: '<path d="M4 7h16v13H4zM3 4h18v3H3zM9 12h6"/>',
+    trash: '<path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5"/>',
+    restore: '<path d="M4 11a8 8 0 1 1 2.2 5.5M4 5v6h6"/><path d="M12 8v4l2.5 1.5"/>',
+    key: '<rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>',
+    split: '<rect x="3.5" y="4" width="17" height="16" rx="2"/><path d="M12 4v16"/>'
+  };
+  return `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[name] || paths.open}</svg>`;
+}
+
+function createWorkspaceAction(label, icon, onClick, className = '') {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = `workspace-action ${className}`.trim();
+  button.setAttribute('aria-label', label);
+  button.title = label;
+  button.innerHTML = makeWorkspaceIcon(icon);
+  button.addEventListener('click', event => {
+    event.stopPropagation();
+    onClick();
+  });
+  return button;
+}
+
+function closeWorkspaceTab(paneIndex, recordId) {
+  const pane = workspacePanes[paneIndex];
+  if (!pane) return;
+  const index = pane.tabs.indexOf(recordId);
+  if (index < 0) return;
+  pane.tabs.splice(index, 1);
+  if (pane.activeId === recordId) pane.activeId = pane.tabs[Math.min(index, pane.tabs.length - 1)] || null;
+  if (!workspacePanes[0].tabs.length && !workspacePanes[1].tabs.length) {
+    workspaceSplit = false;
+    activeWorkspacePane = 0;
+  }
+  saveWorkspaceState();
+  renderWorkspace();
+}
+
+function openWorkspaceTab(recordId, paneIndex = activeWorkspacePane, shouldScroll = true) {
+  const record = records.find(item => item.id === recordId);
+  if (!record) return;
+  const targetPane = workspaceSplit && window.matchMedia('(min-width: 860px)').matches ? (paneIndex === 1 ? 1 : 0) : 0;
+  const pane = workspacePanes[targetPane];
+  if (!pane.tabs.includes(recordId)) {
+    pane.tabs.push(recordId);
+    if (pane.tabs.length > 12) pane.tabs.shift();
+  }
+  pane.activeId = recordId;
+  activeWorkspacePane = targetPane;
+  saveWorkspaceState();
+  renderWorkspace();
+  if (shouldScroll) window.setTimeout(() => elements.workspacePanel.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+}
+
+function createWorkspaceTab(paneIndex, record) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'workspace-tab-item';
+  const select = document.createElement('button');
+  select.type = 'button';
+  select.className = 'workspace-tab-select';
+  select.dataset.workspaceRecord = record.id;
+  select.setAttribute('role', 'tab');
+  select.setAttribute('aria-selected', String(workspacePanes[paneIndex].activeId === record.id));
+  select.title = record.title;
+  const icon = document.createElement('span');
+  icon.className = 'workspace-tab-icon';
+  icon.innerHTML = iconMarkup(record.category);
+  const title = document.createElement('span');
+  title.className = 'workspace-tab-title';
+  title.textContent = record.title || 'Adsız kayıt';
+  select.append(icon, title);
+  if (workspacePanes[paneIndex].activeId === record.id) { select.classList.add('is-active'); wrapper.classList.add('is-active'); }
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'workspace-tab-close';
+  close.dataset.workspaceClose = record.id;
+  close.setAttribute('aria-label', `${record.title} sekmesini kapat`);
+  close.title = 'Sekmeyi kapat';
+  close.innerHTML = makeWorkspaceIcon('close');
+  wrapper.append(select, close);
+  return wrapper;
+}
+
+function createWorkspaceAttachment(attachment) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'workspace-attachment';
+  const url = URL.createObjectURL(attachment.blob);
+  workspaceObjectUrls.push(url);
+  if (attachment.kind === 'image') {
+    const image = document.createElement('img');
+    image.className = 'workspace-image';
+    image.src = url;
+    image.alt = attachment.name || 'Kayıt fotoğrafı';
+    image.loading = 'lazy';
+    image.decoding = 'async';
+    const link = document.createElement('a');
+    link.href = url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.append(image);
+    wrapper.append(link);
+  } else if (attachment.kind === 'audio') {
+    const audio = document.createElement('audio');
+    audio.controls = true;
+    audio.preload = 'metadata';
+    audio.src = url;
+    const label = document.createElement('span');
+    label.textContent = attachment.name || 'Ses kaydı';
+    wrapper.append(label, audio);
+  }
+  return wrapper;
+}
+
+function renderWorkspacePane(paneIndex) {
+  const paneElement = document.querySelector(`[data-workspace-pane="${paneIndex}"]`);
+  const tabsElement = elements.workspaceTabs[paneIndex];
+  const contentElement = elements.workspaceContents[paneIndex];
+  const pane = workspacePanes[paneIndex];
+  const splitVisible = workspaceSplit && window.matchMedia('(min-width: 860px)').matches;
+  paneElement.hidden = paneIndex === 1 && !splitVisible;
+  paneElement.classList.toggle('is-active', activeWorkspacePane === paneIndex);
+  tabsElement.replaceChildren();
+  contentElement.replaceChildren();
+
+  const paneRecords = pane.tabs.map(id => records.find(item => item.id === id)).filter(Boolean);
+  pane.tabs = paneRecords.map(item => item.id);
+  if (!pane.tabs.includes(pane.activeId)) pane.activeId = pane.tabs[pane.tabs.length - 1] || null;
+  for (const record of paneRecords) tabsElement.append(createWorkspaceTab(paneIndex, record));
+
+  const record = records.find(item => item.id === pane.activeId);
+  if (!record) {
+    const empty = document.createElement('div');
+    empty.className = 'workspace-empty';
+    empty.innerHTML = `<div class="workspace-empty-icon">${makeWorkspaceIcon('open')}</div><strong>${paneIndex === 1 ? 'İkinci panel hazır' : 'Çalışma alanı hazır'}</strong><p>Kütüphaneden bir kayda dokunarak burada aç.</p>`;
+    contentElement.append(empty);
+    return;
+  }
+
+  const article = document.createElement('article');
+  article.className = 'workspace-note';
+  const header = document.createElement('div');
+  header.className = 'workspace-note-header';
+  const headingBlock = document.createElement('div');
+  headingBlock.className = 'workspace-note-heading';
+  const eyebrow = document.createElement('div');
+  eyebrow.className = 'workspace-note-type';
+  eyebrow.textContent = `${categoryName(record.category)}${record.archivedAt ? ' · Arşiv' : ''}${record.deletedAt ? ' · Çöp kutusu' : ''}`;
+  const title = document.createElement('h2');
+  title.textContent = record.title || 'Adsız kayıt';
+  const date = document.createElement('div');
+  date.className = 'workspace-note-date';
+  date.textContent = `Son güncelleme · ${formatDate(record.updatedAt)}`;
+  headingBlock.append(eyebrow, title, date);
+  const actions = document.createElement('div');
+  actions.className = 'workspace-note-actions';
+  actions.append(createWorkspaceAction('Favorilerden çıkar / favorilere ekle', 'star', () => toggleFavorite(record), record.favorite ? 'is-favorite' : ''));
+  if (record.category === 'password') {
+    actions.append(createWorkspaceAction('Giriş bilgilerini aç', 'key', () => openPasswordDetails(record)));
+    actions.append(createWorkspaceAction('Düzenle', 'edit', () => openPasswordEditor(record)));
+  } else {
+    actions.append(createWorkspaceAction('Düzenle', 'edit', () => openEditor(record)));
+  }
+  if (record.deletedAt) {
+    actions.append(createWorkspaceAction('Geri yükle', 'restore', () => restoreRecord(record)));
+  } else if (record.archivedAt) {
+    actions.append(createWorkspaceAction('Arşivden çıkar', 'restore', () => unarchiveRecord(record)));
+    actions.append(createWorkspaceAction('Çöp kutusuna taşı', 'trash', () => deleteRecord(record)));
+  } else {
+    actions.append(createWorkspaceAction('Arşivle', 'archive', () => archiveRecord(record)));
+    actions.append(createWorkspaceAction('Çöp kutusuna taşı', 'trash', () => deleteRecord(record)));
+  }
+  header.append(headingBlock, actions);
+  article.append(header);
+
+  if (record.category === 'password') {
+    const privateCard = document.createElement('div');
+    privateCard.className = 'workspace-private-card';
+    privateCard.innerHTML = `<span class="workspace-private-icon">${makeWorkspaceIcon('key')}</span><div><strong>Şifreli giriş kaydı</strong><p>Kullanıcı adı ve parola ayrı güvenli görünümde açılır.</p></div>`;
+    privateCard.append(createWorkspaceAction('Giriş bilgilerini görüntüle', 'open', () => openPasswordDetails(record)));
+    article.append(privateCard);
+  }
+
+  const body = document.createElement('div');
+  body.className = 'workspace-note-body';
+  body.textContent = record.body || (record.category === 'password' ? '' : 'Bu kayıtta henüz açıklama yok.');
+  article.append(body);
+
+  const tags = normalizeTags(record.tags);
+  if (tags.length) {
+    const tagList = document.createElement('div');
+    tagList.className = 'workspace-note-tags';
+    tags.forEach(tag => {
+      const tagButton = document.createElement('button');
+      tagButton.type = 'button';
+      tagButton.textContent = `#${tag}`;
+      tagButton.addEventListener('click', () => {
+        activeTagFilter = tag;
+        activeCategory = 'all';
+        updateFilterButtons();
+        renderRecords();
+        window.setTimeout(() => document.querySelector('.records-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+      });
+      tagList.append(tagButton);
+    });
+    article.append(tagList);
+  }
+
+  const attachments = Array.isArray(record.attachments) ? record.attachments : [];
+  if (attachments.length) {
+    const attachmentGrid = document.createElement('div');
+    attachmentGrid.className = 'workspace-attachments';
+    attachments.forEach(attachment => attachmentGrid.append(createWorkspaceAttachment(attachment)));
+    article.append(attachmentGrid);
+  }
+  contentElement.append(article);
+}
+
+function renderWorkspace() {
+  if (!elements.workspacePanel) return;
+  const validIds = new Set(records.map(record => record.id));
+  for (const pane of workspacePanes) {
+    pane.tabs = pane.tabs.filter(id => validIds.has(id));
+    if (!pane.tabs.includes(pane.activeId)) pane.activeId = pane.tabs[pane.tabs.length - 1] || null;
+  }
+  const canSplit = window.matchMedia('(min-width: 860px)').matches;
+  // If a workspace saved on desktop is opened on a phone, merge both tab groups
+  // into the primary pane so no open note becomes inaccessible on mobile.
+  if (!canSplit && workspaceSplit) {
+    for (const id of workspacePanes[1].tabs) {
+      if (!workspacePanes[0].tabs.includes(id)) workspacePanes[0].tabs.push(id);
+    }
+    if (workspacePanes[1].activeId) workspacePanes[0].activeId = workspacePanes[1].activeId;
+    workspacePanes[1] = { tabs: [], activeId: null };
+    workspaceSplit = false;
+    activeWorkspacePane = 0;
+  }
+  const tabCount = workspacePanes.reduce((total, pane) => total + pane.tabs.length, 0);
+  elements.mobileTabCount.textContent = String(tabCount);
+  elements.workspaceOpenCount.textContent = String(tabCount);
+  elements.workspacePanel.hidden = tabCount === 0;
+  if (activeWorkspacePane === 1 && !workspaceSplit) activeWorkspacePane = 0;
+  const isSplitVisible = workspaceSplit && canSplit;
+  elements.workspaceGrid.classList.toggle('is-split', isSplitVisible);
+  elements.workspaceSplitButton.classList.toggle('is-active', workspaceSplit);
+  elements.workspaceSplitButton.setAttribute('aria-pressed', String(workspaceSplit));
+  elements.workspaceSplitButton.title = workspaceSplit ? 'Bölünmüş görünümü kapat' : 'İkinci paneli aç';
+  releaseWorkspaceObjectUrls();
+  renderWorkspacePane(0);
+  renderWorkspacePane(1);
+  saveWorkspaceState();
+}
+
+function toggleWorkspaceSplit() {
+  if (!window.matchMedia('(min-width: 860px)').matches) {
+    showToast('Bölünmüş görünüm geniş ekranlarda kullanılabilir.');
+    return;
+  }
+  if (!workspaceSplit) {
+    workspaceSplit = true;
+    const activeRecord = records.find(record => record.id === workspacePanes[activeWorkspacePane].activeId)
+      || records.find(record => record.id === workspacePanes[0].activeId);
+    if (activeRecord && !workspacePanes[1].tabs.length) {
+      workspacePanes[1].tabs.push(activeRecord.id);
+      workspacePanes[1].activeId = activeRecord.id;
+    }
+    activeWorkspacePane = 1;
+  } else {
+    for (const id of workspacePanes[1].tabs) {
+      if (!workspacePanes[0].tabs.includes(id)) workspacePanes[0].tabs.push(id);
+    }
+    if (workspacePanes[1].activeId) workspacePanes[0].activeId = workspacePanes[1].activeId;
+    workspacePanes[1] = { tabs: [], activeId: null };
+    workspaceSplit = false;
+    activeWorkspacePane = 0;
+  }
+  saveWorkspaceState();
+  renderWorkspace();
+}
+
+function closeAllWorkspaceTabs() {
+  if (!workspacePanes[0].tabs.length && !workspacePanes[1].tabs.length) return;
+  workspacePanes = [{ tabs: [], activeId: null }, { tabs: [], activeId: null }];
+  workspaceSplit = false;
+  activeWorkspacePane = 0;
+  saveWorkspaceState();
+  renderWorkspace();
+}
+
+function renderWorkspaceTabSwitcher() {
+  const container = elements.workspaceTabSwitcherList;
+  container.replaceChildren();
+  const seen = new Set();
+  for (let paneIndex = 0; paneIndex < workspacePanes.length; paneIndex += 1) {
+    for (const recordId of workspacePanes[paneIndex].tabs) {
+      if (seen.has(recordId)) continue;
+      seen.add(recordId);
+      const record = records.find(item => item.id === recordId);
+      if (!record) continue;
+      const row = document.createElement('div');
+      row.className = 'workspace-switcher-row';
+      const open = document.createElement('button');
+      open.type = 'button';
+      open.className = 'workspace-switcher-open';
+      open.textContent = record.title || 'Adsız kayıt';
+      open.addEventListener('click', () => {
+        activeWorkspacePane = paneIndex;
+        workspacePanes[paneIndex].activeId = record.id;
+        saveWorkspaceState();
+        renderWorkspace();
+        elements.workspaceTabSwitcher.hidden = true;
+        document.body.classList.remove('modal-open');
+        elements.workspacePanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+      const close = document.createElement('button');
+      close.type = 'button';
+      close.className = 'workspace-switcher-close';
+      close.setAttribute('aria-label', `${record.title} sekmesini kapat`);
+      close.innerHTML = makeWorkspaceIcon('close');
+      close.addEventListener('click', () => {
+        closeWorkspaceTab(paneIndex, record.id);
+        renderWorkspaceTabSwitcher();
+      });
+      row.append(open, close);
+      container.append(row);
+    }
+  }
+  if (!container.childElementCount) {
+    const empty = document.createElement('p');
+    empty.className = 'workspace-switcher-empty';
+    empty.textContent = 'Henüz açık sekme yok. Bir kayda dokunarak açabilirsin.';
+    container.append(empty);
+  }
+}
+
 function createRecordCard(record) {
   const card = document.createElement('article');
   const isTrashed = Boolean(record.deletedAt);
@@ -965,6 +1370,8 @@ function createRecordCard(record) {
 
   const main = document.createElement('div');
   main.className = 'record-main';
+  main.dataset.openRecord = record.id;
+  main.title = 'Çalışma alanında aç';
   const title = document.createElement('h3');
   title.className = 'record-title';
   title.textContent = record.title;
@@ -1029,6 +1436,8 @@ function createRecordCard(record) {
 
   const actions = document.createElement('div');
   actions.className = 'record-actions';
+
+  actions.append(createRecordAction(`${record.title} kaydını çalışma alanında aç`, 'Çalışma alanında aç', '<svg viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6"/></svg>', () => openWorkspaceTab(record.id), 'open-workspace-action'));
 
   if (record.category === 'password' && !isTrashed) {
     const viewButton = createRecordAction(
@@ -2449,6 +2858,56 @@ function initEvents() {
   document.getElementById('newAudioButton').addEventListener('click', openAudioModal);
   document.getElementById('newPhotoButton').addEventListener('click', () => openPhotoPicker('new'));
   document.getElementById('emptyAddButton').addEventListener('click', () => openEditor());
+  elements.list.addEventListener('click', event => {
+    if (event.target.closest('.record-action, .record-tag, a, audio, button')) return;
+    const main = event.target.closest('[data-open-record]');
+    if (main) openWorkspaceTab(main.dataset.openRecord);
+  });
+  elements.workspacePanel.addEventListener('click', event => {
+    const closeButton = event.target.closest('[data-workspace-close]');
+    if (closeButton) {
+      const paneElement = closeButton.closest('[data-workspace-pane]');
+      closeWorkspaceTab(Number(paneElement.dataset.workspacePane), closeButton.dataset.workspaceClose);
+      return;
+    }
+    const tabButton = event.target.closest('[data-workspace-record]');
+    if (tabButton) {
+      const paneElement = tabButton.closest('[data-workspace-pane]');
+      const paneIndex = Number(paneElement.dataset.workspacePane);
+      activeWorkspacePane = paneIndex;
+      workspacePanes[paneIndex].activeId = tabButton.dataset.workspaceRecord;
+      saveWorkspaceState();
+      renderWorkspace();
+      return;
+    }
+    const paneElement = event.target.closest('[data-workspace-pane]');
+    if (paneElement) {
+      activeWorkspacePane = Number(paneElement.dataset.workspacePane);
+      elements.workspaceGrid.querySelectorAll('.workspace-pane').forEach((pane, index) => pane.classList.toggle('is-active', index === activeWorkspacePane));
+      saveWorkspaceState();
+    }
+  });
+  elements.workspaceSplitButton.addEventListener('click', toggleWorkspaceSplit);
+  elements.workspaceCloseAllButton.addEventListener('click', closeAllWorkspaceTabs);
+  document.getElementById('mobileNavTabs').addEventListener('click', () => {
+    if (!workspacePanes[0].tabs.length && !workspacePanes[1].tabs.length) {
+      showToast('Açık sekme yok. Bir kayda dokunarak çalışma alanında aç.');
+      return;
+    }
+    renderWorkspaceTabSwitcher();
+    elements.workspaceTabSwitcher.hidden = false;
+    document.body.classList.add('modal-open');
+  });
+  document.getElementById('closeWorkspaceTabSwitcher').addEventListener('click', () => {
+    elements.workspaceTabSwitcher.hidden = true;
+    document.body.classList.remove('modal-open');
+  });
+  elements.workspaceTabSwitcher.addEventListener('click', event => {
+    if (event.target === elements.workspaceTabSwitcher) {
+      elements.workspaceTabSwitcher.hidden = true;
+      document.body.classList.remove('modal-open');
+    }
+  });
   document.querySelectorAll('.close-modal').forEach(button => button.addEventListener('click', closeEditor));
   document.querySelectorAll('.close-audio-modal').forEach(button => button.addEventListener('click', closeAudioModal));
   document.querySelectorAll('.close-photo-modal').forEach(button => button.addEventListener('click', closePhotoModal));
@@ -2605,6 +3064,7 @@ function initEvents() {
       if (!elements.backupExportModal.hidden) closeBackupExport();
       if (!elements.backupImportModal.hidden) closeBackupImport();
       if (!elements.securityAuditModal.hidden) closeSecurityAudit();
+      if (!elements.workspaceTabSwitcher.hidden) { elements.workspaceTabSwitcher.hidden = true; document.body.classList.remove('modal-open'); }
     }
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
       event.preventDefault();
@@ -2634,6 +3094,7 @@ function initEvents() {
     stopRecordingTimer();
     stopMicrophoneTracks();
     releaseRenderedObjectUrls();
+    releaseWorkspaceObjectUrls();
     // Also lock a page restored from the browser's back-forward cache.
     if (vaultCryptoKey) {
       clearUnlockedSession();

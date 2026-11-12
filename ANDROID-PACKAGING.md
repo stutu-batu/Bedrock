@@ -1,7 +1,7 @@
-# Bedrock v0.9 — Android paketleme notları
+# Android packaging notes — Bedrock v0.10.0
 
-Bu sürüm PWA olarak aynı HTTPS alan adında çalışmaya devam eder. Android paketine geçerken aynı origin'i korumak önemlidir; IndexedDB kasa verileri origin ve tarayıcı profiline bağlıdır.
+This release remains a PWA. Continue testing at the same HTTPS origin so IndexedDB data and biometric credentials remain associated with the same relying-party origin.
 
-TWA paketinde WebAuthn PRF kullanılabilirliği Android sürümü, tarayıcı, authenticator ve Digital Asset Links yapılandırmasına bağlıdır. Otomatik WebAuthn istemi bazı WebView/TWA sürümlerinde kullanıcı hareketi isteyebilir; ana parola yedeğini kaldırma.
+For Android installation, a Trusted Web Activity wrapper can package the deployed PWA, but Digital Asset Links must be configured for the final domain/package/signing certificate. A TWA does not copy or migrate the IndexedDB vault. Keep the same website origin when first packaging.
 
-Fotoğraf seçimi HTML file input ile yürütülür: kamera girişi `capture=environment`, galeri girişi çoklu dosya seçimini kullanır. Paketleme sonrası fiziksel cihazda iki akışı da test et.
+If a future Capacitor/native wrapper is chosen, plan and test an explicit encrypted backup/restore migration first. Do not silently move or reset the browser vault.

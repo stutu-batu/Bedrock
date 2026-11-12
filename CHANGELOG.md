@@ -1,10 +1,18 @@
-# Bedrock v0.9.2 — Critical startup and interaction fix
+# Bedrock v0.10.0 — Workspace foundation
 
-- Restored the missing `closePhotoModal()` function. In v0.9.1, its missing definition raised a `ReferenceError` during `initEvents()` and stopped the rest of the UI event listeners from registering.
-- This explains the combined failure of settings, biometric controls, photo picker options, and saving notes. Without the note submit handler, the browser's default form submission reloaded the page and returned to the vault gate.
-- Photo modal cleanup now releases the temporary Blob URL, clears the photo draft fields, and resets the save button safely.
-- Closing the photo-source picker checks all related modals before removing the body's scroll lock.
-- Updated `app.js` and `styles.css` asset query versions and the Service Worker cache to v0.9.2 so old cached app code is replaced.
-- No IndexedDB schema, vault-key wrapping, encrypted record, or backup format changes.
-- Added a regression test that runs all event-listener setup with a DOM stub to catch missing callback references.
-- Added a comprehensive test report covering backups, CRUD, media, reminders, password rotation, biometric flows with a virtual authenticator, and offline shell loading.
+## New
+- Added an Obsidian-inspired tabbed workspace for opening encrypted records without leaving the library.
+- Added desktop split view with two independent tab groups. On phones, the workspace stays single-pane and tabs are managed from the bottom tab counter.
+- Workspace tabs (random record IDs only) are restored after reload; record content remains encrypted in IndexedDB.
+- Added workspace preview for notes, images, audio, tags, and protected password records.
+- Reworked the home area into a compact icon-first quick-action row and icon-only category filters.
+- Reduced visible marketing copy and compacted the header/navigation.
+
+## Preserved
+- IndexedDB database name/schema, vault key wrapping, encrypted record format, and backup formats are unchanged.
+- All v0.9.2 content types, reminders, biometric unlock, backup/restore, favorites, trash, archive, and appearance settings remain in place.
+
+## Notes
+- Split view is available on wider screens; phones use a single pane to avoid cramped reading.
+- This is the first workspace milestone. Drag-to-reorder tabs, resizable panes, backlinks, Markdown editing, and graph view are future milestones.
+- Added responsive recovery: desktop split-pane tabs are merged into the primary tab group when the workspace is opened on a phone, so open notes remain accessible.

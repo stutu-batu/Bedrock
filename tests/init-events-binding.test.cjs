@@ -60,8 +60,8 @@ test('photo modal cleanup function exists and revokes the temporary photo URL', 
   assert.match(source, /URL\.revokeObjectURL\(pendingPhotoUrl\)/);
 });
 
-test('app and service-worker cache are both versioned 0.9.2', () => {
-  assert.match(html, /app\.js\?v=0\.9\.2/);
-  assert.match(html, /styles\.css\?v=0\.9\.2/);
-  assert.match(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), /bedrock-shell-v9-2/);
+test('app and service-worker cache are both versioned 0.10.0', () => {
+  assert.match(html, /app\.js\?v=0\.10\.0/);
+  assert.match(html, /styles\.css\?v=0\.10\.0/);
+  assert.match(fs.readFileSync(path.join(root, 'sw.js'), 'utf8'), /bedrock-shell-v10-0/);
 });
