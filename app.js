@@ -18,7 +18,7 @@ const BACKUP_MAX_BYTES = 100 * 1024 * 1024;
 const BACKUP_MAX_RECORDS = 50000;
 const BACKUP_MAX_ATTACHMENTS_PER_RECORD = 250;
 const BACKUP_MAX_METADATA_BYTES = 2 * 1024 * 1024;
-const APP_VERSION = '0.10.0';
+const APP_VERSION = '0.11.0';
 const MAX_IMAGE_EDGE = 1600;
 const IMAGE_JPEG_QUALITY = 0.82;
 
@@ -1726,14 +1726,19 @@ function openEditor(record = null, forcedCategory = null) {
   elements.form.reset();
   elements.modalTitle.textContent = record ? 'Kaydını düzenle.' : 'Aklında kalmasın.';
   elements.title.value = record ? record.title : '';
-  elements.category.value = record ? record.category : (forcedCategory || 'note');
+  elements.category.value = 'note';
   elements.body.value = record ? record.body : '';
-  elements.noteTags.value = tagsToInput(record ? record.tags : []);
+  elements.noteTags.value = '';
+  const drawer = document.getElementById('editorFileDrawer');
+  if (drawer) drawer.hidden = true;
+  const toggle = document.getElementById('editorFilesToggle');
+  if (toggle) toggle.setAttribute('aria-expanded', 'false');
+  renderEditorFiles();
   elements.noteReminder.value = record && record.reminderAt ? toDateTimeLocal(record.reminderAt) : '';
   renderNotePhotoDraft(record);
   elements.modal.hidden = false;
   document.body.classList.add('modal-open');
-  window.setTimeout(() => elements.title.focus(), 40);
+  window.setTimeout(() => elements.body.focus(), 40);
 }
 
 function closeEditor() {
@@ -2334,16 +2339,42 @@ async function optimizePhotoBlob(file) {
   }
 }
 
+function extractHashtags(text) {
+  const matches = [...String(text || '').matchAll(/(?:^|\s)#([\p{L}\p{N}_-]{1,32})/gu)];
+  return [...new Set(matches.map(match => match[1].toLocaleLowerCase('tr-TR')))].slice(0, 12);
+}
+
+function renderEditorFiles() {
+  const list = document.getElementById('editorFileList');
+  if (!list) return;
+  const query = (document.getElementById('editorFileSearch')?.value || '').trim().toLocaleLowerCase('tr-TR');
+  const filter = document.querySelector('#editorFileFilters [data-file-filter].active')?.dataset.fileFilter || 'all';
+  let items = records.filter(record => !record.deletedAt && record.category !== 'password');
+  if (filter === 'tagged') items = items.filter(record => Array.isArray(record.tags) && record.tags.length);
+  if (filter === 'recent') items = items.filter(record => record.id !== editingId).sort((a,b) => (b.updatedAt || 0) - (a.updatedAt || 0)).slice(0, 20);
+  if (query) items = items.filter(record => `${record.title} ${record.body} ${(record.tags || []).join(' ')}`.toLocaleLowerCase('tr-TR').includes(query));
+  items.sort((a,b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  list.replaceChildren();
+  if (!items.length) { const empty = document.createElement('p'); empty.className = 'editor-file-empty'; empty.textContent = 'Eşleşen not bulunamadı.'; list.append(empty); return; }
+  for (const record of items) {
+    const button = document.createElement('button');
+    button.type = 'button'; button.className = 'editor-file-item';
+    const title = document.createElement('strong'); title.textContent = record.title || 'Başlıksız not';
+    const preview = document.createElement('span'); preview.textContent = (record.body || '').slice(0, 90).replace(/\s+/g, ' ');
+    button.append(title, preview);
+    button.addEventListener('click', () => { closeEditor(); openEditor(record); });
+    list.append(button);
+  }
+}
+
 async function saveRecord(event) {
   event.preventDefault();
   if (notePhotoProcessing) { showToast('Fotoğraflar hazırlanıyor. Kaydetmeden önce tamamlanmasını bekle.'); return; }
-  const title = elements.title.value.trim();
   const body = elements.body.value.trim();
-  const category = elements.category.value;
-  if (!title) {
-    elements.title.focus();
-    return;
-  }
+  const title = elements.title.value.trim() || body.split('\n').map(line => line.trim()).find(Boolean)?.slice(0, 80) || `Not ${new Date().toLocaleDateString('tr-TR')}`;
+  elements.title.value = title;
+  const category = 'note';
+  if (!title) { elements.body.focus(); return; }
 
   const now = Date.now();
   const existing = editingId ? records.find(item => item.id === editingId) : null;
@@ -2362,8 +2393,8 @@ async function saveRecord(event) {
     id: editingId || makeId(),
     title,
     body,
-    category: category === 'object' ? 'object' : 'note',
-    tags: parseTagsInput(elements.noteTags.value),
+    category: 'note',
+    tags: extractHashtags(`${title}\n${body}`),
     favorite: existing ? Boolean(existing.favorite) : false,
     deletedAt: existing ? (existing.deletedAt || null) : null,
     archivedAt: existing ? (existing.archivedAt || null) : null,
@@ -2852,16 +2883,25 @@ function bindGateFormEarly() {
 }
 
 function initEvents() {
-  document.getElementById('newNoteButton').addEventListener('click', () => openEditor(null, 'note'));
-  document.getElementById('newObjectButton').addEventListener('click', () => openEditor(null, 'object'));
-  document.getElementById('newPasswordButton').addEventListener('click', () => openPasswordEditor());
-  document.getElementById('newAudioButton').addEventListener('click', openAudioModal);
-  document.getElementById('newPhotoButton').addEventListener('click', () => openPhotoPicker('new'));
+  document.getElementById('newNoteButton').addEventListener('click', () => openEditor());
+  const filesToggle = document.getElementById('editorFilesToggle');
+  const filesDrawer = document.getElementById('editorFileDrawer');
+  const closeFiles = document.getElementById('editorFilesClose');
+  const setFilesOpen = open => { if (!filesDrawer || !filesToggle) return; filesDrawer.hidden = !open; filesToggle.setAttribute('aria-expanded', String(open)); if (open) renderEditorFiles(); };
+  filesToggle?.addEventListener('click', () => setFilesOpen(filesDrawer.hidden));
+  closeFiles?.addEventListener('click', () => setFilesOpen(false));
+  document.getElementById('editorSaveIcon')?.addEventListener('click', () => elements.form.requestSubmit());
+  document.getElementById('editorFileSearch')?.addEventListener('input', renderEditorFiles);
+  document.getElementById('editorFileFilters')?.addEventListener('click', event => {
+    const button = event.target.closest('[data-file-filter]'); if (!button) return;
+    document.querySelectorAll('#editorFileFilters [data-file-filter]').forEach(item => item.classList.toggle('active', item === button));
+    renderEditorFiles();
+  });
   document.getElementById('emptyAddButton').addEventListener('click', () => openEditor());
   elements.list.addEventListener('click', event => {
     if (event.target.closest('.record-action, .record-tag, a, audio, button')) return;
     const main = event.target.closest('[data-open-record]');
-    if (main) openWorkspaceTab(main.dataset.openRecord);
+    if (main) { const record = records.find(item => item.id === main.dataset.openRecord); if (record) openEditor(record); }
   });
   elements.workspacePanel.addEventListener('click', event => {
     const closeButton = event.target.closest('[data-workspace-close]');

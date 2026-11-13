@@ -1,18 +1,10 @@
-# Bedrock v0.10.0 — Workspace foundation
+# Bedrock v0.11.0
 
-## New
-- Added an Obsidian-inspired tabbed workspace for opening encrypted records without leaving the library.
-- Added desktop split view with two independent tab groups. On phones, the workspace stays single-pane and tabs are managed from the bottom tab counter.
-- Workspace tabs (random record IDs only) are restored after reload; record content remains encrypted in IndexedDB.
-- Added workspace preview for notes, images, audio, tags, and protected password records.
-- Reworked the home area into a compact icon-first quick-action row and icon-only category filters.
-- Reduced visible marketing copy and compacted the header/navigation.
+- Replaced the quick-action dashboard with a single new-note entry point.
+- Changed note creation into a full-screen, editor-first workspace.
+- Added a collapsible bottom file browser with search and All / Recent / Tagged filters.
+- Existing notes can be opened directly from the file panel.
+- New notes use one note type; categories are derived from hashtags such as `#home` or `#ideas` in the title/body.
+- Existing encrypted record schema, IndexedDB database, backup formats, biometric setup and attachments are unchanged.
 
-## Preserved
-- IndexedDB database name/schema, vault key wrapping, encrypted record format, and backup formats are unchanged.
-- All v0.9.2 content types, reminders, biometric unlock, backup/restore, favorites, trash, archive, and appearance settings remain in place.
-
-## Notes
-- Split view is available on wider screens; phones use a single pane to avoid cramped reading.
-- This is the first workspace milestone. Drag-to-reorder tabs, resizable panes, backlinks, Markdown editing, and graph view are future milestones.
-- Added responsive recovery: desktop split-pane tabs are merged into the primary tab group when the workspace is opened on a phone, so open notes remain accessible.
+Legacy object/password records are retained for compatibility; the old type shortcuts and type filters are no longer offered in the main flow.

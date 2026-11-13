@@ -8,7 +8,7 @@
   <title>Bedrock</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/bedrock.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="styles.css?v=0.10.0">
+  <link rel="stylesheet" href="styles.css?v=0.11.0">
 </head>
 <body class="vault-locked">
   <div class="security-gate" id="securityGate">
@@ -50,29 +50,10 @@
     </header>
 
     <main id="home" class="main-content">
-      <section class="quick-section compact-quick-section" aria-label="Hızlı işlemler">
-        <div class="quick-grid compact-quick-grid">
-          <button class="quick-card quick-text" id="newNoteButton" type="button" aria-label="Yeni yazılı not" title="Yeni not">
-            <span class="quick-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h14v15H5zM8 8h8M8 12h8M8 16h5"/></svg></span>
-            <span class="sr-only">Yeni not</span>
-          </button>
-          <button class="quick-card quick-audio" id="newAudioButton" type="button" aria-label="Ses kaydı" title="Ses kaydı">
-            <span class="quick-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3m-4 0h8"/></svg></span>
-            <span class="sr-only">Ses kaydı</span>
-          </button>
-          <button class="quick-card quick-photo" id="newPhotoButton" type="button" aria-label="Fotoğraf ekle" title="Fotoğraf ekle">
-            <span class="quick-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h3l1.5-2h7L17 7h3v12H4z"/><circle cx="12" cy="13" r="3.5"/></svg></span>
-            <span class="sr-only">Fotoğraf ekle</span>
-          </button>
-          <button class="quick-card quick-object" id="newObjectButton" type="button" aria-label="Eşya konumu kaydet" title="Eşya konumu">
-            <span class="quick-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3Z"/><path d="m4.5 8 7.5 4.3L19.5 8M12 12.3V21"/></svg></span>
-            <span class="sr-only">Eşya konumu</span>
-          </button>
-          <button class="quick-card quick-password" id="newPasswordButton" type="button" aria-label="Parola kaydı ekle" title="Parola kaydı">
-            <span class="quick-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/></svg></span>
-            <span class="sr-only">Parola kaydı</span>
-          </button>
-        </div>
+      <section class="editor-launch-row" aria-label="Not oluştur">
+        <button class="icon-button editor-launch-button" id="newNoteButton" type="button" aria-label="Yeni not" title="Yeni not">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h14v15H5zM8 8h8M8 12h8M8 16h5"/></svg>
+        </button>
       </section>
 
       <section class="workspace-panel" id="workspacePanel" aria-label="Çalışma alanı" hidden>
@@ -257,24 +238,19 @@
     </section>
   </div>
 
-  <div class="modal-backdrop" id="noteModal" hidden>
-    <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
-      <div class="modal-topline"><span class="modal-kicker">YENİ KAYIT</span><button class="icon-button close-modal" type="button" aria-label="Kapat">×</button></div>
-      <h2 id="modalTitle">Aklında kalmasın.</h2>
-      <p class="modal-subtitle">Şimdi kaydet, gerektiğinde bul.</p>
+  <div class="modal-backdrop editor-backdrop" id="noteModal" hidden>
+    <section class="modal-card editor-screen" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="editor-topbar"><button class="icon-button close-modal" type="button" aria-label="Kapat" title="Kapat">‹</button><span class="editor-top-title" id="modalTitle">Yeni not</span><div class="editor-top-actions"><button class="icon-button" id="editorFilesToggle" type="button" aria-label="Dosyalar panelini aç" aria-expanded="false" title="Dosyalar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5h16v13H4zM4 9h16M8 5.5v13"/></svg></button><button class="icon-button" id="editorSaveIcon" type="button" aria-label="Notu kaydet" title="Kaydet"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h12l3 3v13H4V4zM8 4v6h8V4M8 20v-7h8v7"/></svg></button></div></div>
       <form id="noteForm">
         <label class="field-label" for="noteTitle">Başlık</label>
-        <input class="text-field" id="noteTitle" name="title" maxlength="100" placeholder="Örn. Yedek anahtar" required>
-        <label class="field-label" for="noteCategory">Kayıt türü</label>
-        <select class="text-field select-field" id="noteCategory" name="category">
-          <option value="note">Genel not</option>
-          <option value="object">Eşya konumu</option>
-        </select>
-        <label class="field-label" for="noteBody">Açıklama</label>
-        <textarea class="text-field text-area" id="noteBody" name="body" rows="5" maxlength="10000" placeholder="Buraya hatırlamak istediğin bilgileri yaz..."></textarea>
-        <label class="field-label" for="noteTags">Etiketler (virgülle ayır)</label>
-        <input class="text-field" id="noteTags" maxlength="350" placeholder="Örn. Ev, Önemli, Elektronik">
-        <p class="field-hint">En fazla 12 etiket ekleyebilirsin.</p>
+        <input class="text-field" id="noteTitle" name="title" maxlength="100" placeholder="Başlık (isteğe bağlı)">
+        <input type="hidden" id="noteCategory" name="category" value="note">
+        <label class="sr-only" for="noteBody">Not içeriği</label>
+        <textarea class="text-field text-area editor-writing-surface" id="noteBody" name="body" rows="12" maxlength="50000" placeholder="Yazmaya başla...
+
+Kategoriler için #etiket kullan. Örn. #ev #fikir #önemli"></textarea>
+        <input type="hidden" id="noteTags" value="">
+
         <div class="note-attachment-editor">
           <div class="note-attachment-heading">
             <div><strong>Fotoğraf ekleri</strong><p id="noteAttachmentCount">Bu kayda henüz fotoğraf eklenmedi.</p></div>
@@ -288,7 +264,13 @@
           <input class="text-field" id="noteReminderAt" type="datetime-local" step="60">
           <p class="field-hint">Seçtiğin zamanda Bedrock bildirim göstermeyi dener. Uygulama kapalıyken PWA bildirimleri garanti değildir.</p>
         </div>
-        <div class="form-actions"><button class="button-secondary close-modal" type="button">Vazgeç</button><button class="button-primary" id="saveNoteButton" type="submit">Kaydet <span>↗</span></button></div>
+        <section class="editor-file-drawer" id="editorFileDrawer" hidden aria-label="Dosyalar">
+          <div class="editor-file-toolbar"><strong>Dosyalar</strong><button class="icon-button" id="editorFilesClose" type="button" aria-label="Dosyalar panelini kapat" title="Kapat">×</button></div>
+          <input class="text-field editor-file-search" id="editorFileSearch" type="search" placeholder="Dosyalarda ara..." autocomplete="off">
+          <div class="editor-file-filters" id="editorFileFilters"><button type="button" class="active" data-file-filter="all">Tümü</button><button type="button" data-file-filter="recent">Son açılanlar</button><button type="button" data-file-filter="tagged">Etiketliler</button></div>
+          <div class="editor-file-list" id="editorFileList"></div>
+        </section>
+        <div class="editor-bottom-actions"><button class="button-primary" id="saveNoteButton" type="submit">Kaydet</button></div>
       </form>
     </section>
   </div>
@@ -440,6 +422,6 @@
   </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="app.js?v=0.10.0" defer onerror="document.getElementById('gateError').textContent='Bedrock kod dosyası yüklenemedi. ZIP içindeki tüm dosyaları yayın klasörünün köküne yüklediğini kontrol et.';document.getElementById('gateSubmit').disabled=true"></script>
+  <script src="app.js?v=0.11.0" defer onerror="document.getElementById('gateError').textContent='Bedrock kod dosyası yüklenemedi. ZIP içindeki tüm dosyaları yayın klasörünün köküne yüklediğini kontrol et.';document.getElementById('gateSubmit').disabled=true"></script>
 </body>
 </html>

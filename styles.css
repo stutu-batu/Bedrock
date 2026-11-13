@@ -483,3 +483,47 @@ html[data-theme="light"] .workspace-switcher-open{background:#f8fafb;color:var(-
 @media(max-width:720px){.app-footer{display:none}}
 .workspace-tab-item.is-active{border-color:var(--line);background:var(--panel)}
 html[data-theme="light"] .workspace-tab-item.is-active{background:var(--panel)}
+
+/* Bedrock v0.11 — focused editor with collapsible file browser */
+.editor-launch-row{display:flex;justify-content:flex-end;margin:8px 0 14px}
+.editor-launch-button{width:42px;height:42px}
+.editor-launch-button svg,.editor-top-actions svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.editor-backdrop{padding:0;align-items:stretch;background:var(--bg);backdrop-filter:none}
+.editor-screen{width:100%;max-width:none;height:100dvh;max-height:none;margin:0;padding:0;border:0;border-radius:0;background:var(--bg);display:flex;flex-direction:column;overflow:hidden;box-shadow:none;animation:none}
+.editor-topbar{height:58px;min-height:58px;display:flex;align-items:center;gap:12px;padding:0 max(18px,env(safe-area-inset-left));border-bottom:1px solid var(--line);background:var(--panel)}
+.editor-topbar>.icon-button{font-size:26px}
+.editor-top-title{flex:1;min-width:0;font-size:13px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.editor-top-actions{display:flex;align-items:center;gap:5px}
+.editor-screen #noteForm{flex:1;min-height:0;display:flex;flex-direction:column;overflow:auto;padding:clamp(18px,4vw,44px) clamp(18px,8vw,110px) calc(14px + env(safe-area-inset-bottom))}
+.editor-screen #noteTitle{max-width:900px;width:100%;min-height:52px;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;padding:8px 0;font-size:clamp(23px,4vw,34px);font-weight:700;letter-spacing:-.8px}
+.editor-screen .editor-writing-surface{flex:1;width:100%;min-height:220px;resize:none;border:0;border-radius:0;background:transparent;padding:24px 0;font:400 16px/1.85 ui-monospace,SFMono-Regular,Consolas,monospace;box-shadow:none;outline:none;white-space:pre-wrap}
+.editor-screen .editor-writing-surface:focus{outline:none;box-shadow:none}
+.editor-screen .field-label[for="noteTitle"]{margin-top:4px}
+.editor-screen #noteCategory,.editor-screen #noteTags,.editor-screen .field-hint{display:none}
+.editor-screen .note-attachment-editor{flex:none}
+.editor-screen .reminder-field-group{flex:none}
+.editor-bottom-actions{display:none}
+.editor-file-drawer{flex:none;max-height:42%;min-height:170px;border:1px solid var(--line);border-radius:14px;background:var(--panel);padding:12px;margin:8px 0 12px;overflow:hidden;display:flex;flex-direction:column;gap:9px}
+.editor-file-drawer[hidden]{display:none}
+.editor-file-toolbar{display:flex;align-items:center;justify-content:space-between;font-size:13px}
+.editor-file-search{min-height:38px;padding:8px 11px;font-size:13px}
+.editor-file-filters{display:flex;gap:7px;overflow:auto}
+.editor-file-filters button{border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--muted);padding:6px 11px;font-size:11px;white-space:nowrap}
+.editor-file-filters button.active{background:var(--accent-soft);border-color:var(--accent);color:var(--text)}
+.editor-file-list{min-height:0;overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:7px}
+.editor-file-item{display:flex;flex-direction:column;align-items:flex-start;gap:4px;text-align:left;border:1px solid var(--line);border-radius:9px;background:var(--panel-2);padding:9px 11px;color:var(--text);min-width:0}
+.editor-file-item strong{font-size:12px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.editor-file-item span{font-size:10px;color:var(--muted);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.editor-file-empty{color:var(--muted);font-size:12px;padding:8px}
+@media(max-width:720px){
+ .editor-backdrop{padding:0}
+ .editor-topbar{height:calc(54px + env(safe-area-inset-top));min-height:calc(54px + env(safe-area-inset-top));padding-top:env(safe-area-inset-top)}
+ .editor-screen #noteForm{padding:16px 18px calc(14px + env(safe-area-inset-bottom))}
+ .editor-screen .editor-writing-surface{font-size:15px;line-height:1.8;min-height:160px}
+ .editor-file-drawer{max-height:45%;min-height:150px}
+ .editor-file-list{grid-template-columns:1fr}
+ .editor-screen .note-attachment-editor{padding:10px}
+}
+
+/* Single-note workflow: legacy type filters remain stored but are not offered for new notes. */
+.icon-category-row [data-category="object"], .icon-category-row #passwordCategory{display:none}

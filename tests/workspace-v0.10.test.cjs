@@ -24,9 +24,9 @@ test('workspace remembers only record IDs and pane layout, not decrypted note co
   assert.doesNotMatch(app, /localStorage\.setItem\(WORKSPACE_STORAGE_KEY,[\s\S]{0,500}record\.body/);
 });
 
-test('record rows and explicit open buttons launch a workspace tab', () => {
+test('record rows open directly in the full-screen editor', () => {
   assert.match(app, /main\.dataset\.openRecord = record\.id/);
-  assert.match(app, /openWorkspaceTab\(record\.id\)/);
+  assert.match(app, /if \(record\) openEditor\(record\)/);
   assert.match(app, /elements\.list\.addEventListener\('click'/);
 });
 
@@ -37,8 +37,9 @@ test('phone uses a tab counter while split panes are limited to wider screens', 
 });
 
 test('home actions and category filters are icon-first but accessible', () => {
-  assert.match(html, /class="quick-grid compact-quick-grid"/);
-  assert.match(html, /aria-label="Yeni yazılı not"/);
+  assert.match(html, /id="newNoteButton"/);
+  assert.doesNotMatch(html, /id="newAudioButton"|id="newObjectButton"|id="newPasswordButton"/);
+  assert.match(html, /id="editorFileDrawer"/);
   assert.match(html, /class="category-row icon-category-row"/);
   assert.match(css, /\.sr-only\{/);
 });
@@ -46,9 +47,9 @@ test('home actions and category filters are icon-first but accessible', () => {
 test('workspace release keeps encrypted vault schema and bumps only app shell cache', () => {
   assert.match(app, /const DB_NAME = 'bedrock-local'/);
   assert.match(app, /const DB_VERSION = 3/);
-  assert.match(app, /const APP_VERSION = '0\.10\.0'/);
-  assert.match(sw, /bedrock-shell-v10-0/);
-  assert.match(sw, /app\.js\?v=0\.10\.0/);
+  assert.match(app, /const APP_VERSION = '0\.11\.0'/);
+  assert.match(sw, /bedrock-shell-v11-0/);
+  assert.match(sw, /app\.js\?v=0\.11\.0/);
 });
 
 test('desktop split tabs are merged into the primary workspace on mobile', () => {
